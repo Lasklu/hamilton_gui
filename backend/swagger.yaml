@@ -15,6 +15,8 @@ tags:
   - name: Databases
   - name: Clustering
   - name: Ontology
+  - name: Jobs
+    description: Background job management for long-running operations
   - name: Mock
     description: Mock endpoints that return fake data for testing
 
@@ -143,10 +145,10 @@ paths:
   /databases/{databaseId}/cluster:
     post:
       tags: [Clustering]
-      summary: Suggest clusters (groups of tables)
+      summary: Start clustering job (async)
       description: >
-        Returns suggested groups of tables. Use suggestions to pick tables explicitly
-        for concepts/attributes/relationships.
+        Starts a background job to cluster tables. Returns immediately with a job ID.
+        Use GET /jobs/{jobId} to check progress and retrieve results.
       parameters:
         - $ref: '#/components/parameters/DatabaseId'
       requestBody:
@@ -161,11 +163,17 @@ paths:
                   default: false
                   description: If true, apply available finetuned models during clustering.
       responses:
-        '200':
-          description: Clustering suggestions
+        '202':
+          description: Clustering job started
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ClusteringSuggestions' }
+              schema:
+                type: object
+                required: [jobId, status]
+                properties:
+                  jobId: { type: string, example: "job_7f2b1a3c4d5e" }
+                  status: { type: string, example: "pending" }
+                  message: { type: string, example: "Clustering job started" }
         '404':
           description: Database not found
           content:
@@ -212,9 +220,10 @@ paths:
   /ontology/concepts:
     post:
       tags: [Ontology]
-      summary: Generate ontology concepts for given tables
+      summary: Generate ontology concepts (async)
       description: >
-        Input scope is {databaseId, tables}. Returns **only concepts** (parser-ready).
+        Starts a background job to generate ontology concepts for given tables.
+        Returns immediately with a job ID. Use GET /jobs/{jobId} to check progress.
       parameters:
         - $ref: '#/components/parameters/Samples'
       requestBody:
@@ -230,14 +239,22 @@ paths:
                     - { schema: "public", name: "orders" }
                     - { schema: "public", name: "order_items" }
       responses:
-        '200':
-          description: Concepts (array) or probabilistic list
+        '202':
+          description: Concepts generation job started
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: '#/components/schemas/ConceptsOnly'
-                  - $ref: '#/components/schemas/ConceptsOnlyProb'
+                type: object
+                required: [jobId, status]
+                properties:
+                  jobId: { type: string, example: "job_8a3b2c1d4e5f" }
+                  status: { type: string, example: "pending" }
+                  message: { type: string, example: "Concepts generation job started" }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404':
           description: Database not found
           content:
