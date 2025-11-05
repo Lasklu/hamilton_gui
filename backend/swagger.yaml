@@ -1,0 +1,809 @@
+openapi: 3.0.3
+info:
+  title: Ontology Learning API
+  version: 1.3.1
+  description: >
+    Endpoints compatible with your Hamilton parsers (`parse_concept`, `parse_mapping`).
+    Sampling behavior:
+      - samples=1 → single result form
+      - samples>1 → probabilistic lists with likelihood in [0,1]
+
+servers:
+  - url: https://api.example.com
+
+tags:
+  - name: Databases
+  - name: Clustering
+  - name: Ontology
+  - name: Mock
+    description: Mock endpoints that return fake data for testing
+
+paths:
+  /databases:
+    get:
+      tags: [Databases]
+      summary: List all databases
+      description: Get a list of all registered databases
+      responses:
+        '200':
+          description: List of databases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Database'
+    
+    post:
+      tags: [Databases]
+      summary: Upload database SQL script
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, sql_file]
+              properties:
+                name: { type: string }
+                sql_file:
+                  type: string
+                  format: binary
+                  description: SQL script (DDL/DML)
+          text/plain:
+            schema:
+              type: string
+              description: Raw SQL script
+      responses:
+        '201':
+          description: Database registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /databases/connect:
+    post:
+      tags: [Databases]
+      summary: Connect to a database via connection string
+      description: >
+        Connect to an external database using a connection string.
+        Supports PostgreSQL, MySQL, and other common database formats.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, connectionString]
+              properties:
+                name: 
+                  type: string
+                  description: Human-readable name for the database
+                  example: "Production Database"
+                connectionString:
+                  type: string
+                  description: Database connection string
+                  example: "postgresql://user:password@localhost:5432/mydb"
+      responses:
+        '201':
+          description: Database connected successfully
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+        '400':
+          description: Invalid connection string or connection failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /databases/{databaseId}:
+    get:
+      tags: [Databases]
+      summary: Get database metadata
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '200':
+          description: Database metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /databases/{databaseId}/schema:
+    get:
+      tags: [Databases]
+      summary: Get database schema metadata
+      description: >
+        Returns detailed schema information including tables, columns, and their data types.
+        Useful for exploring the database structure before ontology generation.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '200':
+          description: Database schema metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DatabaseSchema' }
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /databases/{databaseId}/cluster:
+    post:
+      tags: [Clustering]
+      summary: Suggest clusters (groups of tables)
+      description: >
+        Returns suggested groups of tables. Use suggestions to pick tables explicitly
+        for concepts/attributes/relationships.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applyFinetuning:
+                  type: boolean
+                  default: false
+                  description: If true, apply available finetuned models during clustering.
+      responses:
+        '200':
+          description: Clustering suggestions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClusteringSuggestions' }
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    
+    put:
+      tags: [Clustering]
+      summary: Save updated clustering for a database
+      description: >
+        Saves the modified clustering result for a database. Use this after users
+        have manually adjusted cluster assignments by dragging tables between clusters.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusteringSuggestions'
+      responses:
+        '200':
+          description: Clustering saved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message, clustering]
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string, example: "Clustering saved successfully" }
+                  clustering: { $ref: '#/components/schemas/ClusteringSuggestions' }
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '400':
+          description: Invalid clustering data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /ontology/concepts:
+    post:
+      tags: [Ontology]
+      summary: Generate ontology concepts for given tables
+      description: >
+        Input scope is {databaseId, tables}. Returns **only concepts** (parser-ready).
+      parameters:
+        - $ref: '#/components/parameters/Samples'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScopedRequest' }
+            examples:
+              example:
+                value:
+                  databaseId: "db_7f2b1a"
+                  tables:
+                    - { schema: "public", name: "orders" }
+                    - { schema: "public", name: "order_items" }
+      responses:
+        '200':
+          description: Concepts (array) or probabilistic list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConceptsOnly'
+                  - $ref: '#/components/schemas/ConceptsOnlyProb'
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /ontology/attributes:
+    post:
+      tags: [Ontology]
+      summary: Generate/augment attributes for a given concept and tables
+      description: >
+        Provide {databaseId, tables} and a **ConceptJSON seed**.
+        Returns the **concept including populated `attributes`** (and optionally `id_attributes`, joins, etc.).
+        With samples>1, returns a list of {concept(with attributes), likelihood}.
+      parameters:
+        - $ref: '#/components/parameters/Samples'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AttributesRequest' }
+            examples:
+              example:
+                value:
+                  databaseId: "db_7f2b1a"
+                  tables:
+                    - { schema: "public", name: "orders" }
+                  concept:
+                    id_attributes:
+                      - attributes:
+                          - { table: "orders", column: "id" }
+      responses:
+        '200':
+          description: Concept INCLUDING attributes, or probabilistic list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConceptOnly'
+                  - $ref: '#/components/schemas/ConceptOnlyProb'
+              examples:
+                single:
+                  value:
+                    id_attributes:
+                      - attributes:
+                          - { table: "orders", column: "id" }
+                    attributes:
+                      - { table: "orders", column: "order_date" }
+                      - { table: "orders", column: "customer_id" }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /ontology/relationships:
+    post:
+      tags: [Ontology]
+      summary: Generate ALL relationships (object properties) for given concepts & attributes
+      description: >
+        Provide {databaseId, tables}, the **concepts** (identified by id_attributes), and the
+        **attributes** you already know for those concepts. Returns **only object_properties**.
+        With samples>1, returns a probabilistic list.
+      parameters:
+        - $ref: '#/components/parameters/Samples'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RelationshipsRequest' }
+            examples:
+              example:
+                value:
+                  databaseId: "db_7f2b1a"
+                  tables:
+                    - { schema: "public", name: "orders" }
+                    - { schema: "public", name: "order_items" }
+                  concepts:
+                    - id_attributes:
+                        - attributes: [ { table: "orders", column: "id" } ]
+                    - id_attributes:
+                        - attributes: [ { table: "order_items", column: "id" } ]
+                  attributes:
+                    - conceptId: 0
+                      name: "order_id"
+                      sourceColumns:
+                        - { schema: "public", table: "order_items", column: "order_id" }
+                    - conceptId: 1
+                      name: "order_id"
+                      sourceColumns:
+                        - { schema: "public", table: "order_items", column: "order_id" }
+      responses:
+        '200':
+          description: Object properties (relationships) or probabilistic list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ObjectPropertiesOnly'
+                  - $ref: '#/components/schemas/ObjectPropertiesOnlyProb'
+              examples:
+                single:
+                  value:
+                    - concept1:
+                        id_attributes:
+                          - attributes: [ { table: "orders", column: "id" } ]
+                      concept2:
+                        id_attributes:
+                          - attributes: [ { table: "order_items", column: "id" } ]
+                      joins:
+                        - left:  { table: "orders",       columns: ["id"] }
+                          right: { table: "order_items", columns: ["order_id"] }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  # Mock endpoints for testing
+  /mock/databases:
+    get:
+      tags: [Mock]
+      summary: "[MOCK] List all databases"
+      description: Mock endpoint that returns a list of fake databases.
+      responses:
+        '200':
+          description: List of mock databases
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Database'
+    
+    post:
+      tags: [Mock]
+      summary: "[MOCK] Upload database SQL script"
+      description: Mock endpoint that returns fake database metadata without processing SQL.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, sql_file]
+              properties:
+                name: { type: string }
+                sql_file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Mock database created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+
+  /mock/databases/connect:
+    post:
+      tags: [Mock]
+      summary: "[MOCK] Connect to a database"
+      description: Mock endpoint that simulates connecting to a database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, connectionString]
+              properties:
+                name: { type: string }
+                connectionString: { type: string }
+      responses:
+        '201':
+          description: Mock database connected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+
+  /mock/databases/{databaseId}:
+    get:
+      tags: [Mock]
+      summary: "[MOCK] Get database metadata"
+      description: Mock endpoint that returns fake database metadata.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '200':
+          description: Mock database metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+
+  /mock/databases/{databaseId}/schema:
+    get:
+      tags: [Mock]
+      summary: "[MOCK] Get database schema metadata"
+      description: Mock endpoint that returns fake schema with sample tables (users, orders, products, etc.).
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '200':
+          description: Mock database schema
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DatabaseSchema' }
+
+  /mock/databases/{databaseId}/cluster:
+    post:
+      tags: [Mock]
+      summary: "[MOCK] Suggest clusters (groups of tables)"
+      description: Mock endpoint that returns fake clustering suggestions.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                applyFinetuning:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Mock clustering suggestions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClusteringSuggestions' }
+    
+    put:
+      tags: [Mock]
+      summary: "[MOCK] Save updated clustering"
+      description: Mock endpoint that simulates saving clustering changes.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusteringSuggestions'
+      responses:
+        '200':
+          description: Mock clustering saved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message, clustering]
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string, example: "Clustering saved successfully" }
+                  clustering: { $ref: '#/components/schemas/ClusteringSuggestions' }
+
+components:
+  parameters:
+    DatabaseId:
+      name: databaseId
+      in: path
+      required: true
+      schema: { type: string }
+      description: Database identifier returned by the upload endpoint.
+    Samples:
+      name: samples
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 1
+      description: >
+        Number of stochastic generations to sample.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string, example: "NotFoundError" }
+        message: { type: string, example: "Database not found." }
+
+    Database:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    DatabaseSchema:
+      type: object
+      required: [databaseId, tables, tableCount]
+      properties:
+        databaseId: { type: string, description: "Database identifier" }
+        tableCount: { type: integer, description: "Total number of tables" }
+        tables:
+          type: array
+          description: "List of tables with their columns"
+          items:
+            type: object
+            required: [schema, name, columns]
+            properties:
+              schema: { type: string, description: "Schema name (e.g., 'public')" }
+              name: { type: string, description: "Table name" }
+              columnCount: { type: integer, description: "Number of columns in table" }
+              columns:
+                type: array
+                description: "List of columns in the table"
+                items:
+                  type: object
+                  required: [name, dataType]
+                  properties:
+                    name: { type: string, description: "Column name" }
+                    dataType: { type: string, description: "Column data type" }
+                    nullable: { type: boolean, description: "Whether column allows NULL" }
+                    isPrimaryKey: { type: boolean, description: "Whether column is part of primary key" }
+                    isForeignKey: { type: boolean, description: "Whether column is a foreign key" }
+                    defaultValue: { type: string, description: "Default value if any" }
+
+    TableRef:
+      type: object
+      required: [schema, name]
+      properties:
+        schema: { type: string, example: public }
+        name:   { type: string, example: orders }
+
+    ClusteringGroup:
+      type: object
+      required: [tables]
+      properties:
+        label: { type: string, description: Optional human-readable label }
+        tables:
+          type: array
+          items: { $ref: '#/components/schemas/TableRef' }
+        scores:
+          type: object
+          additionalProperties: { type: number }
+          description: Optional clustering metrics
+
+    ClusteringSuggestions:
+      type: object
+      required: [databaseId, groups, createdAt]
+      properties:
+        databaseId: { type: string }
+        createdAt:  { type: string, format: date-time }
+        appliedFinetuning:
+          type: boolean
+          description: True if finetuning was applied for this run
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/ClusteringGroup' }
+
+    # ---------- Input cores ----------
+    ScopedRequest:
+      type: object
+      required: [databaseId, tables]
+      properties:
+        databaseId: { type: string }
+        tables:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/TableRef' }
+        modelingHints:
+          type: object
+          description: Optional hints (domain, aliases, constraints)
+
+    AttributesRequest:
+      allOf:
+        - $ref: '#/components/schemas/ScopedRequest'
+        - type: object
+          required: [concept]
+          properties:
+            concept:
+              $ref: '#/components/schemas/ConceptJSON'
+              description: Seed concept to be augmented (compatible with parse_concept)
+
+    RelationshipsRequest:
+      allOf:
+        - $ref: '#/components/schemas/ScopedRequest'
+        - type: object
+          required: [concepts, attributes]
+          properties:
+            concepts:
+              type: array
+              minItems: 2
+              description: Concepts identified by id_attributes (fingerprints)
+              items: { $ref: '#/components/schemas/ConceptIdentifier' }
+            attributes:
+              type: array
+              description: Attributes you already have for those concepts (used to aid inference).
+              items:
+                type: object
+                required: [conceptId, name, sourceColumns]
+                properties:
+                  conceptId:
+                    oneOf:
+                      - type: integer   # index into the `concepts` list above
+                      - type: string    # optional client label
+                  name: { type: string }
+                  sourceColumns:
+                    type: array
+                    items:
+                      type: object
+                      required: [schema, table, column]
+                      properties:
+                        schema: { type: string }
+                        table:  { type: string }
+                        column: { type: string }
+            modelingHints:
+              type: object
+              description: Optional hints (expected cardinalities, FK conventions)
+
+    ConceptIdentifier:
+      type: object
+      properties:
+        id_attributes:
+          type: array
+          items: { $ref: '#/components/schemas/IDAttributeSet' }
+
+    # ---------- Parser-compatible JSON ----------
+    IDAttributeSet:
+      type: object
+      required: [attributes]
+      properties:
+        attributes:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [table, column]
+            properties:
+              table:  { type: string }
+              column: { type: string }
+
+    JoinSide:
+      type: object
+      required: [table, columns]
+      properties:
+        table: { type: string }
+        columns:
+          type: array
+          minItems: 1
+          items: { type: string }
+
+    JoinJSON:
+      type: object
+      required: [left, right]
+      properties:
+        left:  { $ref: '#/components/schemas/JoinSide' }
+        right: { $ref: '#/components/schemas/JoinSide' }
+
+    ConditionJSON:
+      type: object
+      required: [operator, value, table, column]
+      properties:
+        operator:
+          type: string
+          enum: [EQUALS, NOT_EQUALS, LESS_THAN, LESS_THAN_EQUALS, GREATER_THAN, GREATER_THAN_EQUALS]
+        value: {}
+        table:  { type: string }
+        column: { type: string }
+
+    ConceptJSON:
+      type: object
+      description: Structure directly consumable by your `parse_concept`.
+      properties:
+        id_attributes:
+          type: array
+          items: { $ref: '#/components/schemas/IDAttributeSet' }
+        attributes:
+          type: array
+          items:
+            type: object
+            required: [table, column]
+            properties:
+              table:  { type: string }
+              column: { type: string }
+        joins:
+          type: array
+          items: { $ref: '#/components/schemas/JoinJSON' }
+        sub_concepts:
+          type: array
+          items: { $ref: '#/components/schemas/ConceptJSON' }
+        conditions:
+          type: array
+          items: { $ref: '#/components/schemas/ConditionJSON' }
+        concept_representations:
+          type: array
+          items: { $ref: '#/components/schemas/ConceptJSON' }
+
+    ObjectPropertyJSON:
+      type: object
+      required: [concept1, concept2, joins]
+      properties:
+        concept1:
+          type: object
+          required: [id_attributes]
+          properties:
+            id_attributes:
+              type: array
+              items: { $ref: '#/components/schemas/IDAttributeSet' }
+        concept2:
+          type: object
+          required: [id_attributes]
+          properties:
+            id_attributes:
+              type: array
+              items: { $ref: '#/components/schemas/IDAttributeSet' }
+        joins:
+          type: array
+          items: { $ref: '#/components/schemas/JoinJSON' }
+
+    # ---------- Output shapes ----------
+    ConceptsOnly:
+      type: array
+      description: Array of ConceptJSON (samples=1).
+      items: { $ref: '#/components/schemas/ConceptJSON' }
+
+    ConceptsOnlyProb:
+      type: array
+      description: Array of { concept, likelihood } (samples>1).
+      items:
+        type: object
+        required: [concept, likelihood]
+        properties:
+          concept:    { $ref: '#/components/schemas/ConceptJSON' }
+          likelihood:
+            type: number
+            minimum: 0
+            maximum: 1
+
+    ConceptOnly:
+      description: Single ConceptJSON (samples=1), INCLUDING `attributes`.
+      allOf:
+        - $ref: '#/components/schemas/ConceptJSON'
+
+    ConceptOnlyProb:
+      type: array
+      description: Array of { concept (with attributes), likelihood } (samples>1).
+      items:
+        type: object
+        required: [concept, likelihood]
+        properties:
+          concept:    { $ref: '#/components/schemas/ConceptJSON' }
+          likelihood:
+            type: number
+            minimum: 0
+            maximum: 1
+
+    ObjectPropertiesOnly:
+      type: array
+      description: Array of ObjectPropertyJSON (samples=1) — **ALL** relationships found.
+      items: { $ref: '#/components/schemas/ObjectPropertyJSON' }
+
+    ObjectPropertiesOnlyProb:
+      type: array
+      description: Array of { object_property, likelihood } (samples>1).
+      items:
+        type: object
+        required: [object_property, likelihood]
+        properties:
+          object_property: { $ref: '#/components/schemas/ObjectPropertyJSON' }
+          likelihood:
+            type: number
+            minimum: 0
+            maximum: 1
