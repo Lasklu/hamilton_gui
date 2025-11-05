@@ -85,6 +85,36 @@ export interface ClusteringResult {
   createdAt: string
 }
 
+// Concept types
+export interface ConceptAttribute {
+  table: string
+  column: string
+}
+
+export interface ConceptIDAttribute {
+  attributes: ConceptAttribute[]
+}
+
+export interface Concept {
+  id: string
+  name?: string
+  clusterId: number
+  idAttributes: ConceptIDAttribute[]
+  attributes?: ConceptAttribute[]
+  confidence?: number
+  subConcepts?: Concept[]
+  conditions?: string[]
+  joins?: string[]
+}
+
+export interface ConceptSuggestion {
+  concepts: Concept[]
+}
+
+export interface ClusterConceptsRequest {
+  clusterId: number
+}
+
 // Ontology types
 export interface IDAttributeSet {
   attributes: Array<{ table: string; column: string }>

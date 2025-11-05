@@ -13,8 +13,9 @@ from app.models.clustering import (
     ClusteringResult,
     ClusterInfo,
 )
+from app.models.concept import Concept, ConceptSuggestion, ConceptAttribute, ConceptIDAttribute
 from app.models.common import ErrorResponse, TableRef
-from app.models.job import JobType
+from app.models.job import JobType, JobCreateResponse, JobStatus
 from app.core.job_manager import job_manager
 
 router = APIRouter(prefix="/mock")
@@ -711,3 +712,216 @@ async def mock_save_clustering(
         "message": "Clustering saved successfully",
         "clustering": clustering
     }
+
+
+# ===== CONCEPT ENDPOINTS =====
+
+@router.post(
+    "/databases/{database_id}/clusters/{cluster_id}/concepts",
+    response_model=JobCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="[MOCK] Generate concepts for a cluster",
+    description="Mock endpoint that starts a job to generate concept suggestions for a cluster.",
+)
+
+async def mock_generate_concepts(
+    database_id: str,
+    cluster_id: int,
+) -> JobCreateResponse:
+    """
+    Mock concept generation endpoint.
+    Simulates generating concept suggestions with a background job.
+    """
+    # Get the database to access its schema
+    if database_id not in MOCK_DATABASES:
+        raise HTTPException(status_code=404, detail=f"Database {database_id} not found")
+    
+    # Create a job
+    job = job_manager.create_job(
+        job_type=JobType.CONCEPTS,
+        database_id=database_id,
+        parameters={"cluster_id": cluster_id}
+    )
+    
+    # Start background task to simulate concept generation
+    async def simulate_concept_generation():
+        try:
+            # Mark job as running
+            job_obj = job_manager.get_job(job.id)
+            if job_obj:
+                job_obj.status = job_manager._jobs[job.id].status = JobStatus.RUNNING
+                job_obj.updatedAt = datetime.now()
+            
+            # Get clustering result to know which tables are in this cluster
+            await asyncio.sleep(0.5)
+            job_manager.update_progress(job.id, 0, 5, "Fetching cluster information...")
+            
+            clustering_result = _generate_mock_clustering(database_id)
+            cluster_info = None
+            for cluster in clustering_result.clusters:
+                if cluster.cluster_id == cluster_id:
+                    cluster_info = cluster
+                    break
+            
+            if not cluster_info:
+                raise ValueError(f"Cluster {cluster_id} not found")
+            
+            await asyncio.sleep(0.5)
+            job_manager.update_progress(job.id, 1, 5, "Analyzing table structures...")
+            
+            # Get schema to understand columns
+            schema = await mock_get_database_schema(database_id)
+            table_map = {table.name: table for table in schema.tables}
+            
+            await asyncio.sleep(0.5)
+            job_manager.update_progress(job.id, 2, 5, "Identifying key attributes...")
+            
+            # Generate concepts - one concept per table in the cluster
+            concepts = []
+            for table_name in cluster_info.tables:
+                if table_name not in table_map:
+                    continue
+                    
+                table = table_map[table_name]
+                
+                # Find ID column(s) - typically "id" or columns ending with "_id"
+                id_columns = [col for col in table.columns if col.name == "id"]
+                if not id_columns:
+                    # Look for primary key or first column as fallback
+                    id_columns = [col for col in table.columns if col.is_primary_key]
+                if not id_columns and table.columns:
+                    id_columns = [table.columns[0]]
+                
+                # Get other descriptive columns (exclude foreign keys and technical columns)
+                descriptive_cols = [
+                    col for col in table.columns 
+                    if col.name not in ["id", "created_at", "updated_at", "deleted_at"] 
+                    and not col.is_foreign_key
+                    and col not in id_columns
+                ][:5]  # Limit to 5 attributes
+                
+                await asyncio.sleep(0.3)
+                job_manager.update_progress(job.id, 3, 5, f"Generating concept for {table_name}...")
+                
+                # Create concept name from table name (capitalize and singularize roughly)
+                concept_name = table_name.replace("_", " ").title().rstrip("s")
+                
+                # Add sub-concepts for the first table with foreign keys
+                sub_concepts = []
+                if len(concepts) == 0 and any(col.is_foreign_key for col in table.columns):
+                    # Create a sub-concept for details/history
+                    fk_columns = [col for col in table.columns if col.is_foreign_key]
+                    if fk_columns:
+                        fk_col = fk_columns[0]
+                        ref_parts = fk_col.foreign_key_reference.split('.') if fk_col.foreign_key_reference else []
+                        if len(ref_parts) == 2:
+                            ref_table = ref_parts[0]
+                            sub_concepts.append(Concept(
+                                id=f"concept_{cluster_id}_{table_name}_details",
+                                name=f"{concept_name} Details",
+                                clusterId=cluster_id,
+                                idAttributes=[
+                                    ConceptIDAttribute(
+                                        attributes=[
+                                            ConceptAttribute(table=ref_table, column="id"),
+                                            ConceptAttribute(table=table_name, column="id")
+                                        ]
+                                    )
+                                ],
+                                attributes=[
+                                    ConceptAttribute(table=table_name, column=col.name)
+                                    for col in descriptive_cols[:3]
+                                ],
+                                confidence=0.82
+                            ))
+                
+                # Add conditions and joins for the first concept
+                conditions = None
+                joins = None
+                if len(concepts) == 0:
+                    conditions = [f"{table_name}.status = 'active'", f"{table_name}.deleted_at IS NULL"]
+                    # Find a related table for join
+                    fk_columns = [col for col in table.columns if col.is_foreign_key]
+                    if fk_columns:
+                        fk_col = fk_columns[0]
+                        ref_parts = fk_col.foreign_key_reference.split('.') if fk_col.foreign_key_reference else []
+                        if len(ref_parts) == 2:
+                            ref_table = ref_parts[0]
+                            joins = [f"LEFT JOIN {ref_table} ON {table_name}.{fk_col.name} = {ref_table}.id"]
+                
+                concept = Concept(
+                    id=f"concept_{cluster_id}_{table_name}",
+                    name=concept_name,
+                    clusterId=cluster_id,
+                    idAttributes=[
+                        ConceptIDAttribute(
+                            attributes=[
+                                ConceptAttribute(table=table_name, column=col.name)
+                                for col in id_columns
+                            ]
+                        )
+                    ],
+                    attributes=[
+                        ConceptAttribute(table=table_name, column=col.name)
+                        for col in descriptive_cols
+                    ],
+                    confidence=round(0.75 + (hash(table_name) % 20) / 100, 2),  # 0.75-0.95
+                    subConcepts=sub_concepts if sub_concepts else None,
+                    conditions=conditions,
+                    joins=joins
+                )
+                concepts.append(concept)
+            
+            await asyncio.sleep(0.5)
+            job_manager.update_progress(job.id, 4, 5, "Finalizing concepts...")
+            
+            result = ConceptSuggestion(concepts=concepts)
+            
+            await asyncio.sleep(0.2)
+            job_manager.update_progress(job.id, 5, 5, "Complete!")
+            
+            # Complete the job
+            job_manager.complete_job(job.id, result.dict())
+        except Exception as e:
+            job_manager.fail_job(job.id, str(e))
+    
+    # Start the background task
+    asyncio.create_task(simulate_concept_generation())
+    
+    return JobCreateResponse(jobId=job.id)
+
+
+@router.post(
+    "/databases/{database_id}/clusters/{cluster_id}/concepts/save",
+    response_model=dict,
+    summary="[MOCK] Save confirmed concepts",
+    description="Mock endpoint that saves confirmed concepts for a cluster.",
+)
+async def mock_save_concepts(
+    database_id: str,
+    cluster_id: int,
+    concepts: ConceptSuggestion,
+) -> dict:
+    """
+    Mock endpoint to save confirmed concepts.
+    In a real implementation, this would persist concepts to a database.
+    """
+    return {
+        "message": f"Saved {len(concepts.concepts)} concept(s) for cluster {cluster_id}",
+        "clusterid": cluster_id,
+        "conceptCount": len(concepts.concepts)
+    }
+
+
+@router.get(
+    "/databases/{database_id}/concepts",
+    response_model=ConceptSuggestion,
+    summary="[MOCK] Get all confirmed concepts",
+    description="Mock endpoint that returns all confirmed concepts for a database.",
+)
+async def mock_get_all_concepts(database_id: str) -> ConceptSuggestion:
+    """
+    Mock endpoint to get all confirmed concepts.
+    Returns empty list for now.
+    """
+    return ConceptSuggestion(concepts=[])

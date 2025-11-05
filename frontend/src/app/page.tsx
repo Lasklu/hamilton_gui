@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ProgressBar } from '@/components/ProgressBar'
 import { DatabaseUploadStep } from '@/components/steps/DatabaseUploadStep'
 import { DatabaseClusteringStep } from '@/components/steps/DatabaseClusteringStep'
+import { ConceptsStep } from '@/components/steps/ConceptsStep'
 import type { ClusteringResult } from '@/lib/types'
 
 const STEPS = [
@@ -34,6 +35,11 @@ export default function Home() {
   const handleClusteringConfirm = () => {
     // Move to concepts step
     setCurrentStep(2)
+  }
+
+  const handleConceptsComplete = () => {
+    // Move to attributes step
+    setCurrentStep(3)
   }
 
   return (
@@ -77,22 +83,13 @@ export default function Home() {
         )}
 
         {/* Concepts Step */}
-        {currentStep === 2 && databaseId && (
-          <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-            <div className="max-w-2xl w-full p-8 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800">
-              <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
-                Edit Concepts
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                This step will allow you to edit and refine the concepts extracted from your database clusters.
-              </p>
-              <div className="p-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <p className="text-blue-800 dark:text-blue-200">
-                  Concept editing interface will be implemented here.
-                </p>
-              </div>
-            </div>
-          </div>
+        {currentStep === 2 && databaseId && clusteringResult && (
+          <ConceptsStep
+            databaseId={databaseId}
+            clusteringResult={clusteringResult}
+            useMockApi={useMockApi}
+            onComplete={handleConceptsComplete}
+          />
         )}
 
         {/* Placeholder for other steps */}

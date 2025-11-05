@@ -5,7 +5,8 @@ import type {
   ClusteringResult, 
   ClusterRequest,
   JobCreateResponse,
-  JobStatusResponse
+  JobStatusResponse,
+  ConceptSuggestion
 } from '@/lib/types'
 
 /**
@@ -104,6 +105,46 @@ export const mockApi = {
       const response = await axiosInstance.put(
         `/mock/databases/${databaseId}/cluster`,
         clustering
+      )
+      return response.data
+    },
+  },
+
+  concepts: {
+    /**
+     * Generate concept suggestions for a cluster (mock)
+     */
+    async generateConcepts(
+      databaseId: string,
+      clusterId: number
+    ): Promise<JobCreateResponse> {
+      const response = await axiosInstance.post<JobCreateResponse>(
+        `/mock/databases/${databaseId}/clusters/${clusterId}/concepts`
+      )
+      return response.data
+    },
+
+    /**
+     * Save confirmed concepts for a cluster (mock)
+     */
+    async saveConcepts(
+      databaseId: string,
+      clusterId: number,
+      concepts: ConceptSuggestion
+    ): Promise<{ message: string }> {
+      const response = await axiosInstance.post(
+        `/mock/databases/${databaseId}/clusters/${clusterId}/concepts/save`,
+        concepts
+      )
+      return response.data
+    },
+
+    /**
+     * Get all confirmed concepts for a database (mock)
+     */
+    async getAllConcepts(databaseId: string): Promise<ConceptSuggestion> {
+      const response = await axiosInstance.get<ConceptSuggestion>(
+        `/mock/databases/${databaseId}/concepts`
       )
       return response.data
     },

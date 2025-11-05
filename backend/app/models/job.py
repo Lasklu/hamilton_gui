@@ -60,3 +60,11 @@ class JobStatusResponse(BaseModel):
     progress: Optional[JobProgress] = None
     result: Optional[Any] = None
     error: Optional[str] = None
+
+
+class JobCreateResponse(BaseModel):
+    """Response when creating a new job"""
+    jobId: str = Field(..., description="ID of the created job", alias="jobId")
+
+    class Config:
+        populate_by_name = True

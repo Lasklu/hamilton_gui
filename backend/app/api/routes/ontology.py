@@ -15,7 +15,7 @@ from app.models.ontology import (
     ScopedRequest,
 )
 from app.models.common import ErrorResponse
-from app.models.job import JobType
+from app.models.job import JobType, JobCreateResponse
 from app.core.job_manager import job_manager
 
 router = APIRouter()
@@ -23,6 +23,7 @@ router = APIRouter()
 
 @router.post(
     "/concepts",
+    response_model=JobCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
@@ -42,7 +43,7 @@ async def generate_concepts(
         description="Number of stochastic generations to sample",
     ),
     service: OntologyServiceDep = None,
-) -> dict:
+) -> JobCreateResponse:
     """
     Start a concepts generation job.
 
@@ -82,15 +83,12 @@ async def generate_concepts(
     # Start the job
     job_manager.start_job(job.id, run_concepts)
     
-    return {
-        "jobId": job.id,
-        "status": job.status.value,
-        "message": "Concepts generation job started"
-    }
+    return JobCreateResponse(jobId=job.id)
 
 
 @router.post(
     "/attributes",
+    response_model=JobCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
@@ -110,7 +108,7 @@ async def generate_attributes(
         description="Number of stochastic generations to sample",
     ),
     service: OntologyServiceDep = None,
-) -> dict:
+) -> JobCreateResponse:
     """
     Start an attributes generation job.
 
@@ -151,15 +149,12 @@ async def generate_attributes(
     # Start the job
     job_manager.start_job(job.id, run_attributes)
     
-    return {
-        "jobId": job.id,
-        "status": job.status.value,
-        "message": "Attributes generation job started"
-    }
+    return JobCreateResponse(jobId=job.id)
 
 
 @router.post(
     "/relationships",
+    response_model=JobCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
@@ -179,7 +174,7 @@ async def generate_relationships(
         description="Number of stochastic generations to sample",
     ),
     service: OntologyServiceDep = None,
-) -> dict:
+) -> JobCreateResponse:
     """
     Start a relationships generation job.
 
@@ -221,8 +216,4 @@ async def generate_relationships(
     # Start the job
     job_manager.start_job(job.id, run_relationships)
     
-    return {
-        "jobId": job.id,
-        "status": job.status.value,
-        "message": "Relationships generation job started"
-    }
+    return JobCreateResponse(jobId=job.id)

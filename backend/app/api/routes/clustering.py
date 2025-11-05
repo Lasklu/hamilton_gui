@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, status
 from app.api.deps import ClusteringServiceDep
 from app.models.clustering import ClusteringSuggestions, ClusterRequest, ClusteringResult
 from app.models.common import ErrorResponse
-from app.models.job import JobType
+from app.models.job import JobType, JobCreateResponse
 from app.core.job_manager import job_manager
 
 router = APIRouter()
@@ -14,6 +14,7 @@ router = APIRouter()
 
 @router.post(
     "/databases/{database_id}/cluster",
+    response_model=JobCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
@@ -28,7 +29,7 @@ async def cluster_database(
     database_id: str,
     request: ClusterRequest = Body(default=ClusterRequest()),
     service: ClusteringServiceDep = None,
-) -> dict:
+) -> JobCreateResponse:
     """
     Start a clustering job for a database.
 
@@ -74,11 +75,7 @@ async def cluster_database(
     # Start the job
     job_manager.start_job(job.id, run_clustering)
     
-    return {
-        "jobId": job.id,
-        "status": job.status.value,
-        "message": "Clustering job started"
-    }
+    return JobCreateResponse(jobId=job.id)
 
 
 @router.put(
