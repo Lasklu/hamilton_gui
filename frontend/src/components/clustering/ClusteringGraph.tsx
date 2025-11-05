@@ -10,6 +10,7 @@ interface ClusteringGraphProps {
   databaseId: string;
   useMockApi?: boolean;
   onClusteringChange?: (updatedClustering: ClusteringResult) => void;
+  onSaveSuccess?: () => void;
 }
 
 interface TableNode {
@@ -65,6 +66,7 @@ export default function ClusteringGraph({
   databaseId,
   useMockApi = false,
   onClusteringChange,
+  onSaveSuccess,
 }: ClusteringGraphProps) {
   const [tables, setTables] = useState<TableNode[]>([]);
   const [clusterBoxes, setClusterBoxes] = useState<ClusterBox[]>([]);
@@ -479,6 +481,7 @@ export default function ClusteringGraph({
       
       // Notify parent component
       onClusteringChange(updatedResult);
+      onSaveSuccess?.();
       setHasChanges(false);
     } catch (error) {
       console.error('Failed to save clustering:', error);
@@ -747,13 +750,6 @@ export default function ClusteringGraph({
           </button>
         </div>
       )}
-
-      {/* Controls hint */}
-      <div className="absolute top-4 right-4 bg-white p-2 rounded-lg shadow-md border border-gray-200 text-xs text-gray-600">
-        <div>🖱️ Scroll to zoom</div>
-        <div>✋ Drag background to pan</div>
-        <div>📦 Drag tables between clusters</div>
-      </div>
     </div>
   );
 }

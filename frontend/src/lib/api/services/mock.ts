@@ -1,5 +1,12 @@
 import { axiosInstance } from '../client'
-import type { Database, DatabaseSchema, ClusteringResult, ClusterRequest } from '@/lib/types'
+import type { 
+  Database, 
+  DatabaseSchema, 
+  ClusteringResult, 
+  ClusterRequest,
+  JobCreateResponse,
+  JobStatusResponse
+} from '@/lib/types'
 
 /**
  * Mock API endpoints for testing without backend logic.
@@ -74,13 +81,13 @@ export const mockApi = {
 
   clustering: {
     /**
-     * Generate clustering suggestions (mock)
+     * Start clustering job (mock)
      */
     async cluster(
       databaseId: string,
       options: ClusterRequest = {}
-    ): Promise<ClusteringResult> {
-      const response = await axiosInstance.post<ClusteringResult>(
+    ): Promise<JobCreateResponse> {
+      const response = await axiosInstance.post<JobCreateResponse>(
         `/mock/databases/${databaseId}/cluster`,
         options
       )
@@ -98,6 +105,16 @@ export const mockApi = {
         `/mock/databases/${databaseId}/cluster`,
         clustering
       )
+      return response.data
+    },
+  },
+
+  jobs: {
+    /**
+     * Get job status (mock)
+     */
+    async getStatus(jobId: string): Promise<JobStatusResponse> {
+      const response = await axiosInstance.get<JobStatusResponse>(`/mock/jobs/${jobId}`)
       return response.data
     },
   },

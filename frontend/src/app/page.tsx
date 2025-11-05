@@ -29,8 +29,11 @@ export default function Home() {
 
   const handleClusteringComplete = (result: ClusteringResult) => {
     setClusteringResult(result)
-    // Can automatically move to next step if desired
-    // setCurrentStep(2)
+  }
+
+  const handleClusteringConfirm = () => {
+    // Move to concepts step
+    setCurrentStep(2)
   }
 
   return (
@@ -69,11 +72,31 @@ export default function Home() {
             databaseId={databaseId}
             useMockApi={useMockApi}
             onComplete={handleClusteringComplete}
+            onConfirm={handleClusteringConfirm}
           />
         )}
 
+        {/* Concepts Step */}
+        {currentStep === 2 && databaseId && (
+          <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
+            <div className="max-w-2xl w-full p-8 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                Edit Concepts
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                This step will allow you to edit and refine the concepts extracted from your database clusters.
+              </p>
+              <div className="p-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-blue-800 dark:text-blue-200">
+                  Concept editing interface will be implemented here.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Placeholder for other steps */}
-        {currentStep > 1 && (
+        {currentStep > 2 && (
           <div className="text-center py-12">
             <h2 className="text-2xl font-semibold mb-4">
               Step {currentStep + 1}: {STEPS[currentStep].label}

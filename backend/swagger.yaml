@@ -264,11 +264,10 @@ paths:
   /ontology/attributes:
     post:
       tags: [Ontology]
-      summary: Generate/augment attributes for a given concept and tables
+      summary: Generate/augment attributes (async)
       description: >
-        Provide {databaseId, tables} and a **ConceptJSON seed**.
-        Returns the **concept including populated `attributes`** (and optionally `id_attributes`, joins, etc.).
-        With samples>1, returns a list of {concept(with attributes), likelihood}.
+        Starts a background job to generate attributes for a given concept and tables.
+        Returns immediately with a job ID. Use GET /jobs/{jobId} to check progress.
       parameters:
         - $ref: '#/components/parameters/Samples'
       requestBody:
@@ -287,25 +286,24 @@ paths:
                       - attributes:
                           - { table: "orders", column: "id" }
       responses:
-        '200':
-          description: Concept INCLUDING attributes, or probabilistic list
+        '202':
+          description: Attributes generation job started
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: '#/components/schemas/ConceptOnly'
-                  - $ref: '#/components/schemas/ConceptOnlyProb'
-              examples:
-                single:
-                  value:
-                    id_attributes:
-                      - attributes:
-                          - { table: "orders", column: "id" }
-                    attributes:
-                      - { table: "orders", column: "order_date" }
-                      - { table: "orders", column: "customer_id" }
+                type: object
+                required: [jobId, status]
+                properties:
+                  jobId: { type: string, example: "job_9b4c3d2e5f6g" }
+                  status: { type: string, example: "pending" }
+                  message: { type: string, example: "Attributes generation job started" }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404':
-          description: Not found
+          description: Database not found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -313,11 +311,10 @@ paths:
   /ontology/relationships:
     post:
       tags: [Ontology]
-      summary: Generate ALL relationships (object properties) for given concepts & attributes
+      summary: Generate ALL relationships (async)
       description: >
-        Provide {databaseId, tables}, the **concepts** (identified by id_attributes), and the
-        **attributes** you already know for those concepts. Returns **only object_properties**.
-        With samples>1, returns a probabilistic list.
+        Starts a background job to generate object properties (relationships) for given concepts and attributes.
+        Returns immediately with a job ID. Use GET /jobs/{jobId} to check progress.
       parameters:
         - $ref: '#/components/parameters/Samples'
       requestBody:
@@ -347,28 +344,69 @@ paths:
                       sourceColumns:
                         - { schema: "public", table: "order_items", column: "order_id" }
       responses:
-        '200':
-          description: Object properties (relationships) or probabilistic list
+        '202':
+          description: Relationships generation job started
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: '#/components/schemas/ObjectPropertiesOnly'
-                  - $ref: '#/components/schemas/ObjectPropertiesOnlyProb'
-              examples:
-                single:
-                  value:
-                    - concept1:
-                        id_attributes:
-                          - attributes: [ { table: "orders", column: "id" } ]
-                      concept2:
-                        id_attributes:
-                          - attributes: [ { table: "order_items", column: "id" } ]
-                      joins:
-                        - left:  { table: "orders",       columns: ["id"] }
-                          right: { table: "order_items", columns: ["order_id"] }
+                type: object
+                required: [jobId, status]
+                properties:
+                  jobId: { type: string, example: "job_a5d6e7f8g9h0" }
+                  status: { type: string, example: "pending" }
+                  message: { type: string, example: "Relationships generation job started" }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404':
-          description: Not found
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /jobs/{jobId}:
+    get:
+      tags: [Jobs]
+      summary: Get job status and result
+      description: >
+        Check the status of a background job. Returns progress information
+        and the final result when completed.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The job ID returned from an async operation
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, type, status]
+                properties:
+                  id: { type: string, example: "job_7f2b1a3c4d5e" }
+                  type: { type: string, enum: [clustering, concepts, attributes, relationships] }
+                  status: { type: string, enum: [pending, running, completed, failed] }
+                  progress:
+                    type: object
+                    properties:
+                      current: { type: integer, example: 45 }
+                      total: { type: integer, example: 100 }
+                      percentage: { type: number, example: 45.0 }
+                      message: { type: string, example: "Processing table 45 of 100" }
+                  result:
+                    description: The final result (only present when status is completed)
+                    type: object
+                  error:
+                    type: string
+                    description: Error message (only present when status is failed)
+        '404':
+          description: Job not found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }

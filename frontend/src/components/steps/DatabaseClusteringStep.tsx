@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { Loading } from '@/components/ui/Loading';
+import { JobProgressIndicator } from '@/components/ui/JobProgressIndicator';
 import { apiClient, mockClient } from '@/lib/api/services';
+import { useJobPolling } from '@/hooks/useJobPolling';
 import type { Database, ClusteringResult, ClusterInfo } from '@/lib/types';
 import dynamic from 'next/dynamic';
 
@@ -21,6 +23,7 @@ interface DatabaseClusteringStepProps {
   databaseId: string;
   useMockApi?: boolean;
   onComplete?: (clusteringResult: ClusteringResult) => void;
+  onConfirm?: () => void;
 }
 
 type LoadingStage = 'creating' | 'clustering' | 'complete' | 'error';
@@ -201,6 +204,7 @@ export function DatabaseClusteringStep({
   databaseId,
   useMockApi = false,
   onComplete,
+  onConfirm,
 }: DatabaseClusteringStepProps) {
   const [loadingStage, setLoadingStage] = useState<LoadingStage>('creating');
   const [database, setDatabase] = useState<Database | null>(null);
@@ -210,9 +214,31 @@ export function DatabaseClusteringStep({
   const [editingClusterId, setEditingClusterId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
   const hasInitialized = useRef(false);
 
   const client = useMockApi ? mockClient : apiClient;
+
+  // Poll job status
+  const { status, progress, result, error: jobError } = useJobPolling(
+    (id) => client.jobs.getStatus(id),
+    {
+      jobId,
+      enabled: !!jobId && loadingStage === 'clustering',
+      onComplete: (clusterResult: ClusteringResult) => {
+        setClusteringResult(clusterResult);
+        setModifiedClusters(clusterResult.clusters);
+        setLoadingStage('complete');
+        onComplete?.(clusterResult);
+        toast.success('Clustering completed successfully!');
+      },
+      onError: (err) => {
+        setError(err);
+        setLoadingStage('error');
+        toast.error(`Clustering failed: ${err}`);
+      },
+    }
+  );
 
   // Cluster colors
   const CLUSTER_COLORS = [
@@ -240,25 +266,19 @@ export function DatabaseClusteringStep({
       const dbData = await client.databases.get(databaseId);
       setDatabase(dbData);
 
-      // Step 2: Trigger clustering
+      // Step 2: Start clustering job
       setLoadingStage('clustering');
-      const clusterResult = await client.clustering.cluster(databaseId);
+      const jobResponse = await client.clustering.cluster(databaseId);
+      setJobId(jobResponse.jobId);
       
-      // Type guard to ensure we have ClusteringResult
-      if ('clusters' in clusterResult) {
-        setClusteringResult(clusterResult);
-        setModifiedClusters(clusterResult.clusters);
-        setLoadingStage('complete');
-        onComplete?.(clusterResult);
-      } else {
-        throw new Error('Invalid clustering result format');
-      }
+      // Job polling will handle the rest
     } catch (err) {
       console.error('Error during database initialization:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setLoadingStage('error');
+      toast.error('Failed to start clustering');
     }
-  }, [databaseId, client, onComplete]);
+  }, [databaseId, client]);
 
   useEffect(() => {
     initializeDatabase();
@@ -305,37 +325,6 @@ export function DatabaseClusteringStep({
     setHasChanges(true);
   };
 
-  const handleSaveClustering = async () => {
-    if (!modifiedClusters || !hasChanges) return;
-
-    try {
-      // Build the clustering result
-      const clusteringToSave: ClusteringResult = {
-        ...clusteringResult!,
-        clusters: modifiedClusters,
-      };
-
-      // Call API to save the modified clustering
-      const result = await client.clustering.saveClustering(databaseId, clusteringToSave);
-      
-      // Update the clustering result
-      if (clusteringResult) {
-        const updatedResult = {
-          ...clusteringResult,
-          clusters: modifiedClusters,
-        };
-        setClusteringResult(updatedResult);
-        setHasChanges(false);
-        
-        // Show success toast
-        toast.success(result.message || 'Clustering changes saved successfully!');
-      }
-    } catch (err) {
-      console.error('Error saving clustering:', err);
-      toast.error('Failed to save clustering changes');
-    }
-  };
-
   const handleAddCluster = () => {
     if (!modifiedClusters) return;
 
@@ -372,7 +361,12 @@ export function DatabaseClusteringStep({
 
   const handleClusteringChange = useCallback((updatedClustering: ClusteringResult) => {
     setModifiedClusters(updatedClustering.clusters);
+    setClusteringResult(updatedClustering);
     setHasChanges(true);
+  }, []);
+
+  const handleSaveSuccess = useCallback(() => {
+    setHasChanges(false);
   }, []);  const getLoadingMessage = () => {
     switch (loadingStage) {
       case 'creating':
@@ -405,13 +399,11 @@ export function DatabaseClusteringStep({
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="max-w-md w-full p-8 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800">
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <Loading size="lg" />
-            <p className="text-lg font-medium text-gray-700 dark:text-gray-300">{getLoadingMessage()}</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-              {loadingStage === 'creating' && 'This may take a few moments...'}
-              {loadingStage === 'clustering' && 'Analyzing table relationships and grouping similar tables...'}
+          <div className="flex flex-col items-center justify-center space-y-6">
+            <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+              {loadingStage === 'creating' ? 'Loading Database' : 'Analyzing Database Structure'}
             </p>
+            <JobProgressIndicator progress={progress} className="w-full" />
           </div>
         </div>
       </div>
@@ -456,6 +448,7 @@ export function DatabaseClusteringStep({
                 databaseId={databaseId}
                 useMockApi={useMockApi}
                 onClusteringChange={handleClusteringChange}
+                onSaveSuccess={handleSaveSuccess}
               />
             )}
           </div>
@@ -512,18 +505,35 @@ export function DatabaseClusteringStep({
             </button>
           </div>
 
-          {/* Save Button */}
+          {/* Confirm & Continue Button */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
             <button
-              onClick={handleSaveClustering}
-              disabled={!hasChanges}
+              onClick={onConfirm}
+              disabled={hasChanges}
               className={`w-full py-3 px-4 rounded-lg font-medium transition-all shadow-sm ${
-                hasChanges
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'
+                !hasChanges
+                  ? 'bg-green-600 hover:bg-green-700 text-white shadow-md hover:shadow-lg'
                   : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
               }`}
+              title={hasChanges ? 'Please save your changes before continuing' : 'Continue to concept editing'}
             >
-              {hasChanges ? 'Save Clustering Changes' : 'No Changes to Save'}
+              <div className="flex items-center justify-center gap-2">
+                {hasChanges ? (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Save Changes First
+                  </>
+                ) : (
+                  <>
+                    Confirm & Continue to Concepts
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </>
+                )}
+              </div>
             </button>
           </div>
         </div>

@@ -1,8 +1,9 @@
 """Mock API endpoints for testing without backend logic implementation."""
 
+import asyncio
 from datetime import datetime
 from typing import Annotated
-from fastapi import APIRouter, File, Form, UploadFile, status, Body
+from fastapi import APIRouter, File, Form, UploadFile, status, Body, HTTPException
 
 from app.models.database import Database, DatabaseSchema, ColumnMetadata, TableMetadata
 from app.models.clustering import (
@@ -13,6 +14,8 @@ from app.models.clustering import (
     ClusterInfo,
 )
 from app.models.common import ErrorResponse, TableRef
+from app.models.job import JobType
+from app.core.job_manager import job_manager
 
 router = APIRouter(prefix="/mock")
 
@@ -349,21 +352,65 @@ async def mock_get_database_schema(database_id: str) -> DatabaseSchema:
 
 @router.post(
     "/databases/{database_id}/cluster",
-    response_model=ClusteringResult,
+    status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
     },
-    summary="[MOCK] Suggest clusters (groups of tables)",
-    description="Mock endpoint that returns fake clustering suggestions with 35 clusters for 100 tables.",
+    summary="[MOCK] Start clustering job",
+    description="Mock endpoint that simulates starting a clustering job and returns a job ID.",
 )
 async def mock_cluster_database(
     database_id: str,
     request: ClusterRequest = Body(default=ClusterRequest()),
-) -> ClusteringResult:
+) -> dict:
     """
-    Mock clustering endpoint.
-    Returns sample clustering with 35 clusters distributed across 100 tables.
+    Mock clustering endpoint that starts a job.
+    The job will complete after a few seconds when polled.
     """
+    # Create a mock job
+    job = job_manager.create_job(
+        job_type=JobType.CLUSTERING,
+        database_id=database_id,
+        parameters={"apply_finetuning": request.apply_finetuning}
+    )
+    
+    # Start a background task that simulates processing
+    async def mock_clustering_task():
+        """Simulate clustering with progress updates"""
+        try:
+            job_manager.update_progress(job.id, 0, 100, "Starting clustering analysis...")
+            await asyncio.sleep(1)
+            
+            job_manager.update_progress(job.id, 25, 100, "Analyzing table relationships...")
+            await asyncio.sleep(1)
+            
+            job_manager.update_progress(job.id, 50, 100, "Computing similarity scores...")
+            await asyncio.sleep(1)
+            
+            job_manager.update_progress(job.id, 75, 100, "Clustering tables...")
+            await asyncio.sleep(1)
+            
+            job_manager.update_progress(job.id, 90, 100, "Finalizing results...")
+            await asyncio.sleep(0.5)
+            
+            # Generate the mock clustering result
+            result = _generate_mock_clustering(database_id)
+            return result
+        except Exception as e:
+            raise e
+    
+    # Start the job
+    job_manager.start_job(job.id, mock_clustering_task)
+    
+    return {
+        "jobId": job.id,
+        "status": job.status.value,
+        "message": "Clustering job started"
+    }
+
+
+def _generate_mock_clustering(database_id: str) -> ClusteringResult:
+    """Generate mock clustering result with 35 clusters for 100 tables"""
     # Define 35 clusters with realistic distribution
     clusters = [
         ClusterInfo(
@@ -618,6 +665,31 @@ async def mock_cluster_database(
         clusters=clusters,
         created_at=datetime.now()
     )
+
+
+@router.get(
+    "/jobs/{job_id}",
+    summary="[MOCK] Get job status",
+    description="Mock endpoint that returns job status and results.",
+)
+async def mock_get_job_status(job_id: str) -> dict:
+    """
+    Mock job status endpoint.
+    Returns the status of a mock job.
+    """
+    job = job_manager.get_job(job_id)
+    
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    
+    return {
+        "id": job.id,
+        "type": job.type.value,
+        "status": job.status.value,
+        "progress": job.progress.dict() if job.progress else None,
+        "result": job.result,
+        "error": job.error
+    }
 
 
 @router.put(

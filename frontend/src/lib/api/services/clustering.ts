@@ -1,15 +1,15 @@
 import { axiosInstance } from '../client'
-import type { ClusteringSuggestions, ClusterRequest, ClusteringResult } from '@/lib/types'
+import type { ClusteringSuggestions, ClusterRequest, ClusteringResult, JobCreateResponse } from '@/lib/types'
 
 export const clusteringApi = {
   /**
-   * Generate clustering suggestions for a database
+   * Start clustering job for a database (async)
    */
   async cluster(
     databaseId: string,
     options: ClusterRequest = {}
-  ): Promise<ClusteringSuggestions> {
-    const response = await axiosInstance.post<ClusteringSuggestions>(
+  ): Promise<JobCreateResponse> {
+    const response = await axiosInstance.post<JobCreateResponse>(
       `/databases/${databaseId}/cluster`,
       options
     )

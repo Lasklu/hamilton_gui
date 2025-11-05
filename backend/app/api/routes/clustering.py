@@ -1,42 +1,84 @@
 """Clustering endpoints."""
 
+import asyncio
 from fastapi import APIRouter, Body, status
 
 from app.api.deps import ClusteringServiceDep
 from app.models.clustering import ClusteringSuggestions, ClusterRequest, ClusteringResult
 from app.models.common import ErrorResponse
+from app.models.job import JobType
+from app.core.job_manager import job_manager
 
 router = APIRouter()
 
 
 @router.post(
     "/databases/{database_id}/cluster",
-    response_model=ClusteringSuggestions,
+    status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
     },
-    summary="Suggest clusters (groups of tables)",
+    summary="Start clustering job (async)",
     description=(
-        "Returns suggested groups of tables. Use suggestions to pick tables "
-        "explicitly for concepts/attributes/relationships."
+        "Starts a background job to cluster tables. Returns immediately with a job ID. "
+        "Use GET /jobs/{jobId} to check progress and retrieve results."
     ),
 )
 async def cluster_database(
     database_id: str,
     request: ClusterRequest = Body(default=ClusterRequest()),
     service: ClusteringServiceDep = None,
-) -> ClusteringSuggestions:
+) -> dict:
     """
-    Generate table clustering suggestions for a database.
+    Start a clustering job for a database.
 
     - **database_id**: Database identifier
     - **applyFinetuning**: If true, apply finetuned models during clustering
     """
-    suggestions = await service.generate_clusters(
+    # Create job
+    job = job_manager.create_job(
+        job_type=JobType.CLUSTERING,
         database_id=database_id,
-        apply_finetuning=request.apply_finetuning,
+        parameters={"apply_finetuning": request.apply_finetuning}
     )
-    return suggestions
+    
+    # Start background task
+    async def run_clustering():
+        """Background task to run clustering"""
+        try:
+            # Simulate progress
+            job_manager.update_progress(job.id, 0, 100, "Analyzing database schema...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 20, 100, "Extracting table relationships...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 40, 100, "Computing similarity scores...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 60, 100, "Clustering tables...")
+            # Run actual clustering
+            suggestions = await service.generate_clusters(
+                database_id=database_id,
+                apply_finetuning=request.apply_finetuning,
+            )
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 90, 100, "Finalizing results...")
+            await asyncio.sleep(0.3)
+            
+            return suggestions
+        except Exception as e:
+            raise e
+    
+    # Start the job
+    job_manager.start_job(job.id, run_clustering)
+    
+    return {
+        "jobId": job.id,
+        "status": job.status.value,
+        "message": "Clustering job started"
+    }
 
 
 @router.put(

@@ -2,6 +2,9 @@
  * Type definitions matching the API schema
  */
 
+// Re-export job types
+export * from './job'
+
 // Common types
 export interface TableRef {
   schema: string

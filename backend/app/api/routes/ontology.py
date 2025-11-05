@@ -1,5 +1,6 @@
 """Ontology generation endpoints."""
 
+import asyncio
 from typing import List, Union
 from fastapi import APIRouter, Body, Query, status
 
@@ -14,21 +15,22 @@ from app.models.ontology import (
     ScopedRequest,
 )
 from app.models.common import ErrorResponse
+from app.models.job import JobType
+from app.core.job_manager import job_manager
 
 router = APIRouter()
 
 
 @router.post(
     "/concepts",
-    response_model=Union[List[ConceptJSON], List[ConceptWithLikelihood]],
+    status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
     },
-    summary="Generate ontology concepts for given tables",
+    summary="Generate ontology concepts (async)",
     description=(
-        "Input scope is {databaseId, tables}. Returns **only concepts** (parser-ready). "
-        "With samples=1, returns array of concepts. With samples>1, returns array of "
-        "{concept, likelihood}."
+        "Starts a background job to generate ontology concepts for given tables. "
+        "Returns immediately with a job ID. Use GET /jobs/{jobId} to check progress."
     ),
 )
 async def generate_concepts(
@@ -40,31 +42,63 @@ async def generate_concepts(
         description="Number of stochastic generations to sample",
     ),
     service: OntologyServiceDep = None,
-) -> Union[List[ConceptJSON], List[ConceptWithLikelihood]]:
+) -> dict:
     """
-    Generate ontology concepts for the specified tables.
+    Start a concepts generation job.
 
     - **databaseId**: Database identifier
     - **tables**: List of tables to analyze
     - **modelingHints**: Optional domain hints, aliases, constraints
     - **samples**: Number of samples (1 = single result, >1 = probabilistic list)
     """
-    result = await service.generate_concepts(request=request, samples=samples)
-    return result
+    # Create job
+    job = job_manager.create_job(
+        job_type=JobType.CONCEPTS,
+        database_id=request.databaseId,
+        parameters={"samples": samples, "tables": [t.dict() for t in request.tables]}
+    )
+    
+    # Start background task
+    async def run_concepts():
+        """Background task to generate concepts"""
+        try:
+            job_manager.update_progress(job.id, 0, 100, "Analyzing table schemas...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 30, 100, "Identifying entities...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 60, 100, "Generating concepts...")
+            result = await service.generate_concepts(request=request, samples=samples)
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 90, 100, "Finalizing...")
+            await asyncio.sleep(0.3)
+            
+            return result
+        except Exception as e:
+            raise e
+    
+    # Start the job
+    job_manager.start_job(job.id, run_concepts)
+    
+    return {
+        "jobId": job.id,
+        "status": job.status.value,
+        "message": "Concepts generation job started"
+    }
 
 
 @router.post(
     "/attributes",
-    response_model=Union[ConceptJSON, List[ConceptWithLikelihood]],
+    status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
     },
-    summary="Generate/augment attributes for a given concept and tables",
+    summary="Generate/augment attributes (async)",
     description=(
-        "Provide {databaseId, tables} and a **ConceptJSON seed**. "
-        "Returns the **concept including populated `attributes`** "
-        "(and optionally `id_attributes`, joins, etc.). "
-        "With samples>1, returns a list of {concept (with attributes), likelihood}."
+        "Starts a background job to generate attributes for a given concept and tables. "
+        "Returns immediately with a job ID. Use GET /jobs/{jobId} to check progress."
     ),
 )
 async def generate_attributes(
@@ -76,9 +110,9 @@ async def generate_attributes(
         description="Number of stochastic generations to sample",
     ),
     service: OntologyServiceDep = None,
-) -> Union[ConceptJSON, List[ConceptWithLikelihood]]:
+) -> dict:
     """
-    Generate or augment attributes for a concept.
+    Start an attributes generation job.
 
     - **databaseId**: Database identifier
     - **tables**: List of tables to analyze
@@ -86,22 +120,54 @@ async def generate_attributes(
     - **modelingHints**: Optional hints
     - **samples**: Number of samples (1 = single concept, >1 = probabilistic list)
     """
-    result = await service.generate_attributes(request=request, samples=samples)
-    return result
+    # Create job
+    job = job_manager.create_job(
+        job_type=JobType.ATTRIBUTES,
+        database_id=request.databaseId,
+        parameters={"samples": samples}
+    )
+    
+    # Start background task
+    async def run_attributes():
+        """Background task to generate attributes"""
+        try:
+            job_manager.update_progress(job.id, 0, 100, "Analyzing concept structure...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 30, 100, "Mapping table columns...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 60, 100, "Generating attributes...")
+            result = await service.generate_attributes(request=request, samples=samples)
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 90, 100, "Finalizing...")
+            await asyncio.sleep(0.3)
+            
+            return result
+        except Exception as e:
+            raise e
+    
+    # Start the job
+    job_manager.start_job(job.id, run_attributes)
+    
+    return {
+        "jobId": job.id,
+        "status": job.status.value,
+        "message": "Attributes generation job started"
+    }
 
 
 @router.post(
     "/relationships",
-    response_model=Union[List[ObjectPropertyJSON], List[ObjectPropertyWithLikelihood]],
+    status_code=status.HTTP_202_ACCEPTED,
     responses={
         404: {"model": ErrorResponse, "description": "Database not found"},
     },
-    summary="Generate ALL relationships (object properties) for given concepts & attributes",
+    summary="Generate ALL relationships (async)",
     description=(
-        "Provide {databaseId, tables}, the **concepts** (identified by id_attributes), "
-        "and the **attributes** you already know for those concepts. "
-        "Returns **only object_properties**. "
-        "With samples>1, returns a probabilistic list."
+        "Starts a background job to generate object properties (relationships) for given concepts and attributes. "
+        "Returns immediately with a job ID. Use GET /jobs/{jobId} to check progress."
     ),
 )
 async def generate_relationships(
@@ -113,9 +179,9 @@ async def generate_relationships(
         description="Number of stochastic generations to sample",
     ),
     service: OntologyServiceDep = None,
-) -> Union[List[ObjectPropertyJSON], List[ObjectPropertyWithLikelihood]]:
+) -> dict:
     """
-    Generate relationships (object properties) between concepts.
+    Start a relationships generation job.
 
     - **databaseId**: Database identifier
     - **tables**: List of tables to analyze
@@ -124,5 +190,39 @@ async def generate_relationships(
     - **modelingHints**: Optional cardinality hints, FK conventions
     - **samples**: Number of samples (1 = single result, >1 = probabilistic list)
     """
-    result = await service.generate_relationships(request=request, samples=samples)
-    return result
+    # Create job
+    job = job_manager.create_job(
+        job_type=JobType.RELATIONSHIPS,
+        database_id=request.databaseId,
+        parameters={"samples": samples}
+    )
+    
+    # Start background task
+    async def run_relationships():
+        """Background task to generate relationships"""
+        try:
+            job_manager.update_progress(job.id, 0, 100, "Analyzing concept relationships...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 30, 100, "Identifying foreign keys...")
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 60, 100, "Generating relationships...")
+            result = await service.generate_relationships(request=request, samples=samples)
+            await asyncio.sleep(0.5)
+            
+            job_manager.update_progress(job.id, 90, 100, "Finalizing...")
+            await asyncio.sleep(0.3)
+            
+            return result
+        except Exception as e:
+            raise e
+    
+    # Start the job
+    job_manager.start_job(job.id, run_relationships)
+    
+    return {
+        "jobId": job.id,
+        "status": job.status.value,
+        "message": "Relationships generation job started"
+    }

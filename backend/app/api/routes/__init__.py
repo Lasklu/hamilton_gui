@@ -1,7 +1,7 @@
 """API route modules."""
 
 from fastapi import APIRouter
-from app.api.routes import databases, clustering, ontology, mock
+from app.api.routes import databases, clustering, ontology, jobs, mock
 
 # Create main API router
 api_router = APIRouter()
@@ -22,6 +22,11 @@ api_router.include_router(
     ontology.router,
     prefix="/ontology",
     tags=["Ontology"],
+)
+
+api_router.include_router(
+    jobs.router,
+    tags=["Jobs"],
 )
 
 # Include mock router for testing
