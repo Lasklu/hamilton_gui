@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, Pencil, Trash2, Wrench, ChevronDown, X, Database } from 'lucide-react'
 import { AddConditionDialog } from '@/components/concepts/AddConditionDialog'
+import { ColumnSelectionWorkflow } from '@/components/shared/ColumnSelectionWorkflow'
+import { useJoinWorkflow } from '@/hooks/useJoinWorkflow'
 import type { Concept, Attribute, DatabaseSchema } from '@/lib/types'
 
 interface AttributeSuggestionViewProps {
@@ -41,16 +43,6 @@ export function AttributeSuggestionView({
   const [addingAttributeReferenceForId, setAddingAttributeReferenceForId] = useState<string | null>(null)
   const [editingStaticValueForId, setEditingStaticValueForId] = useState<string | null>(null)
   const [staticValue, setStaticValue] = useState('')
-  const [joinWorkflowFor, setJoinWorkflowFor] = useState<{
-    attributeId: string
-    phase: 'selection' | 'join-step-1' | 'join-step-2' | 'complete'
-    attrTable?: string
-    attrColumn?: string
-    existingTable?: string
-    existingColumn?: string
-    newColumn?: string
-  } | null>(null)
-  const [joinType, setJoinType] = useState<'INNER' | 'LEFT' | 'RIGHT'>('LEFT')
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Calculate existing tables from concept's ID attributes
@@ -64,24 +56,77 @@ export function AttributeSuggestionView({
   }
 
   // Calculate tables already in joins
-  const joinedTables = new Set<string>()
   if (concept.joins) {
     concept.joins.forEach(join => {
       const tableMatches = join.match(/(?:FROM|JOIN)\s+(\w+)/gi)
       if (tableMatches) {
         tableMatches.forEach(match => {
           const tableName = match.replace(/(?:FROM|JOIN)\s+/i, '').trim()
-          if (tableName) joinedTables.add(tableName)
+          if (tableName) existingTables.add(tableName)
         })
       }
     })
   }
 
-  // Check if join is needed for a given table
-  const needsJoin = (table: string | null | undefined): boolean => {
-    if (!table) return false
-    return existingTables.size > 0 && !existingTables.has(table) && !joinedTables.has(table)
-  }
+  // Use shared join workflow hook
+  const {
+    workflow: joinWorkflow,
+    joinType,
+    setJoinType,
+    needsJoin,
+    reset: resetJoinWorkflow,
+    getHighlightedTables,
+  } = useJoinWorkflow({
+    existingTables,
+    selectedTable: selectedColumn?.table,
+    selectedColumn: selectedColumn?.column,
+    isActive: addingAttributeReferenceForId !== null,
+    onComplete: (result) => {
+      if (!addingAttributeReferenceForId) return
+
+      // Update the attribute with the selected reference
+      const updatedAttrs = attributes.map(attr =>
+        attr.id === addingAttributeReferenceForId
+          ? {
+              ...attr,
+              table: result.table,
+              column: result.column,
+              staticValue: '', // Clear static value when setting reference
+              dataType: schema.tables
+                .find(t => t.name === result.table)
+                ?.columns.find(col => col.name === result.column)
+                ?.dataType || attr.dataType,
+              joins: result.join
+                ? [...(attr.joins || []), result.join]
+                : attr.joins,
+            }
+          : attr
+      )
+
+      onAttributesUpdate(updatedAttrs)
+      setAddingAttributeReferenceForId(null)
+      resetJoinWorkflow()
+      onCancelColumnSelection?.()
+      onColumnClickHandled?.()
+    },
+  })
+
+  // Highlight tables based on workflow phase
+  useEffect(() => {
+    if (!addingAttributeReferenceForId || !onTableHighlight) return
+
+    const tablesToHighlight = getHighlightedTables()
+    if (tablesToHighlight.length > 0) {
+      onTableHighlight(tablesToHighlight)
+    }
+  }, [joinWorkflow.phase, addingAttributeReferenceForId])
+
+  // Clean up highlighting when concept changes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (onTableHighlight) onTableHighlight([])
+    }
+  }, [concept.id])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -96,120 +141,6 @@ export function AttributeSuggestionView({
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [conditionMenuOpen])
-
-  // Handle column click from database viewer
-  useEffect(() => {
-    if (selectedColumn) {
-      if (addingAttributeReferenceForId) {
-        // Check if we're in a join workflow
-        if (joinWorkflowFor && joinWorkflowFor.attributeId === addingAttributeReferenceForId) {
-          // Join workflow active
-          if (joinWorkflowFor.phase === 'selection' && selectedColumn.table && selectedColumn.column) {
-            // Initial selection - check if join needed
-            if (needsJoin(selectedColumn.table)) {
-              // Start join workflow
-              setJoinWorkflowFor({
-                attributeId: addingAttributeReferenceForId,
-                phase: 'join-step-1',
-                attrTable: selectedColumn.table,
-                attrColumn: selectedColumn.column
-              })
-            } else {
-              // No join needed, just update the attribute
-              onAttributesUpdate(
-                attributes.map(attr =>
-                  attr.id === addingAttributeReferenceForId
-                    ? {
-                        ...attr,
-                        table: selectedColumn.table,
-                        column: selectedColumn.column,
-                        staticValue: '', // Clear static value when setting reference
-                        dataType: schema.tables
-                          .find(t => t.name === selectedColumn.table)
-                          ?.columns.find(col => col.name === selectedColumn.column)
-                          ?.dataType || attr.dataType
-                      }
-                    : attr
-                )
-              )
-              setAddingAttributeReferenceForId(null)
-              setJoinWorkflowFor(null)
-              onCancelColumnSelection?.()
-            }
-          } else if (joinWorkflowFor.phase === 'join-step-1' && existingTables.has(selectedColumn.table)) {
-            // Step 1: Select column in existing table
-            setJoinWorkflowFor({
-              ...joinWorkflowFor,
-              phase: 'join-step-2',
-              existingTable: selectedColumn.table,
-              existingColumn: selectedColumn.column
-            })
-          } else if (joinWorkflowFor.phase === 'join-step-2' && selectedColumn.table === joinWorkflowFor.attrTable) {
-            // Step 2: Select column in new table to complete join
-            const joinStatement = `${joinType} JOIN ${joinWorkflowFor.attrTable} ON ${joinWorkflowFor.existingTable}.${joinWorkflowFor.existingColumn} = ${joinWorkflowFor.attrTable}.${selectedColumn.column}`
-            
-            // Update attribute with join
-            onAttributesUpdate(
-              attributes.map(attr =>
-                attr.id === addingAttributeReferenceForId
-                  ? {
-                      ...attr,
-                      table: joinWorkflowFor.attrTable!,
-                      column: joinWorkflowFor.attrColumn!,
-                      staticValue: '', // Clear static value when setting reference
-                      dataType: schema.tables
-                        .find(t => t.name === joinWorkflowFor.attrTable)
-                        ?.columns.find(col => col.name === joinWorkflowFor.attrColumn)
-                        ?.dataType || attr.dataType,
-                      joins: [...(attr.joins || []), joinStatement]
-                    }
-                  : attr
-              )
-            )
-            setAddingAttributeReferenceForId(null)
-            setJoinWorkflowFor(null)
-            setJoinType('LEFT')
-            onCancelColumnSelection?.()
-          }
-        } else {
-          // Start new workflow
-          if (needsJoin(selectedColumn.table)) {
-            setJoinWorkflowFor({
-              attributeId: addingAttributeReferenceForId,
-              phase: 'join-step-1',
-              attrTable: selectedColumn.table,
-              attrColumn: selectedColumn.column
-            })
-          } else {
-            // No join needed
-            onAttributesUpdate(
-              attributes.map(attr =>
-                attr.id === addingAttributeReferenceForId
-                  ? {
-                      ...attr,
-                      table: selectedColumn.table,
-                      column: selectedColumn.column,
-                      staticValue: '', // Clear static value when setting reference
-                      dataType: schema.tables
-                        .find(t => t.name === selectedColumn.table)
-                        ?.columns.find(col => col.name === selectedColumn.column)
-                        ?.dataType || attr.dataType
-                    }
-                  : attr
-              )
-            )
-            setAddingAttributeReferenceForId(null)
-            setJoinWorkflowFor(null)
-            onCancelColumnSelection?.()
-          }
-        }
-      } else {
-        // Regular attribute addition
-        handleAddAttribute(selectedColumn.table, selectedColumn.column)
-      }
-      onColumnClickHandled?.()
-    }
-  }, [selectedColumn])
 
   const handleAddAttribute = (table: string, column: string) => {
     const tableData = schema.tables.find((t) => t.name === table)
@@ -229,6 +160,20 @@ export function AttributeSuggestionView({
 
   const handleRemoveAttribute = (id: string) => {
     onAttributesUpdate(attributes.filter(attr => attr.id !== id))
+    
+    // Clean up state if this attribute was being edited
+    if (addingAttributeReferenceForId === id) {
+      setAddingAttributeReferenceForId(null)
+      resetJoinWorkflow()
+      if (onTableHighlight) onTableHighlight([])
+    }
+    if (editingStaticValueForId === id) {
+      setEditingStaticValueForId(null)
+    }
+    if (conditionsDialogOpen === id) {
+      setConditionsDialogOpen(null)
+      if (onTableHighlight) onTableHighlight([])
+    }
   }
 
   const handleStartEdit = (attr: Attribute) => {
@@ -293,17 +238,13 @@ export function AttributeSuggestionView({
   const handleStartAddingAttributeReference = (attributeId: string) => {
     setConditionMenuOpen(null)
     setAddingAttributeReferenceForId(attributeId)
-    setJoinWorkflowFor({
-      attributeId,
-      phase: 'selection'
-    })
     onRequestColumnSelection?.()
   }
 
   const handleCancelAddingAttributeReference = () => {
     setAddingAttributeReferenceForId(null)
-    setJoinWorkflowFor(null)
-    setJoinType('LEFT')
+    resetJoinWorkflow()
+    if (onTableHighlight) onTableHighlight([])
     onCancelColumnSelection?.()
   }
 
@@ -548,7 +489,7 @@ export function AttributeSuggestionView({
                     onClose={() => setConditionsDialogOpen(null)}
                     onTableHighlight={onTableHighlight}
                     onColumnClick={onColumnClick}
-                    selectedTable={selectedTable || undefined}
+                    selectedTable={selectedColumn?.table}
                     selectedColumn={selectedColumn?.column}
                   />
                 ) : editingStaticValueForId === attr.id ? (
@@ -596,78 +537,25 @@ export function AttributeSuggestionView({
                       Source Attribute
                     </h5>
                     {addingAttributeReferenceForId === attr.id ? (
-                      <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-primary-300 dark:border-primary-700 rounded-lg bg-primary-50 dark:bg-primary-900/10">
-                        <Database className="w-12 h-12 text-primary-500 mb-3" />
-                        {!joinWorkflowFor || joinWorkflowFor.phase === 'selection' ? (
-                          <>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                              Select a column from the database viewer
-                            </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 text-center mb-3">
-                              Click on any column in the left panel to set it as this attribute's reference
-                            </p>
-                          </>
-                        ) : joinWorkflowFor.phase === 'join-step-1' ? (
-                          <>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                              Join Required - Step 1 of 2
-                            </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 text-center mb-2">
-                              Selected: <span className="font-mono font-semibold">{joinWorkflowFor.attrTable}.{joinWorkflowFor.attrColumn}</span>
-                            </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 text-center mb-3">
-                              Now select a column from an <span className="font-semibold">existing table</span> ({Array.from(existingTables).join(', ')}) to join with
-                            </p>
-                            <div className="flex gap-2 mb-3">
-                              <label className="flex items-center gap-1 text-xs">
-                                <input
-                                  type="radio"
-                                  checked={joinType === 'LEFT'}
-                                  onChange={() => setJoinType('LEFT')}
-                                  className="text-primary-500"
-                                />
-                                LEFT JOIN
-                              </label>
-                              <label className="flex items-center gap-1 text-xs">
-                                <input
-                                  type="radio"
-                                  checked={joinType === 'INNER'}
-                                  onChange={() => setJoinType('INNER')}
-                                  className="text-primary-500"
-                                />
-                                INNER JOIN
-                              </label>
-                              <label className="flex items-center gap-1 text-xs">
-                                <input
-                                  type="radio"
-                                  checked={joinType === 'RIGHT'}
-                                  onChange={() => setJoinType('RIGHT')}
-                                  className="text-primary-500"
-                                />
-                                RIGHT JOIN
-                              </label>
-                            </div>
-                          </>
-                        ) : joinWorkflowFor.phase === 'join-step-2' ? (
-                          <>
-                            <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                              Join Required - Step 2 of 2
-                            </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 text-center mb-2">
-                              Existing table column: <span className="font-mono font-semibold">{joinWorkflowFor.existingTable}.{joinWorkflowFor.existingColumn}</span>
-                            </p>
-                            <p className="text-xs text-gray-600 dark:text-gray-400 text-center mb-3">
-                              Now select the matching column in <span className="font-mono font-semibold">{joinWorkflowFor.attrTable}</span>
-                            </p>
-                          </>
-                        ) : null}
-                        <button
-                          onClick={handleCancelAddingAttributeReference}
-                          className="px-3 py-1.5 text-xs bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      <ColumnSelectionWorkflow
+                        phase={joinWorkflow.phase}
+                        selectedTable={selectedColumn?.table}
+                        selectedColumn={selectedColumn?.column}
+                        existingTables={existingTables}
+                        joinType={joinType}
+                        onJoinTypeChange={setJoinType}
+                        onCancel={handleCancelAddingAttributeReference}
+                        joinWorkflowData={
+                          joinWorkflow.attrTable
+                            ? {
+                                attrTable: joinWorkflow.attrTable,
+                                attrColumn: joinWorkflow.attrColumn!,
+                                existingTable: joinWorkflow.existingTable,
+                                existingColumn: joinWorkflow.existingColumn,
+                              }
+                            : undefined
+                        }
+                      />
                     ) : (
                       <div className="flex items-center gap-2 flex-wrap">
                         {attr.staticValue ? (

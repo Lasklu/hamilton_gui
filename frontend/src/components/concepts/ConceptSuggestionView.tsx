@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pencil, Trash2, Plus, ChevronDown, ChevronRight, Wrench, X } from 'lucide-react';
 import { AddIdAttributeDialog } from './AddIdAttributeDialog';
 import { AddConditionDialog } from './AddConditionDialog';
+import { AddJoinDialog } from './AddJoinDialog';
 import type { Concept, DatabaseSchema, ConceptAttribute, ConceptIDAttribute } from '@/lib/types';
 
 interface ConceptSuggestionViewProps {
@@ -45,6 +46,7 @@ export function ConceptSuggestionView({
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [addIdDialogOpen, setAddIdDialogOpen] = useState<string | null>(null);
   const [addConditionDialogOpen, setAddConditionDialogOpen] = useState<string | null>(null);
+  const [addJoinDialogOpen, setAddJoinDialogOpen] = useState<string | null>(null);
 
   // Sort concepts by confidence (highest first)
   const sortedConcepts = [...concepts].sort((a, b) => 
@@ -162,6 +164,19 @@ export function ConceptSuggestionView({
     onConceptUpdate(conceptId, updates);
   };
 
+  const handleAddJoin = (conceptId: string, join: string) => {
+    const concept = findConceptById(conceptId);
+    if (!concept || !onConceptUpdate) return;
+
+    const existingJoins = concept.joins || [];
+    // Don't add if already exists
+    if (existingJoins.includes(join)) return;
+    
+    onConceptUpdate(conceptId, {
+      joins: [...existingJoins, join]
+    });
+  };
+
   const handleRemoveCondition = (conceptId: string, conditionIndex: number) => {
     const concept = findConceptById(conceptId);
     if (!concept || !onConceptUpdate) return;
@@ -242,6 +257,25 @@ export function ConceptSuggestionView({
               schema={schema}
               onTableHighlight={onTableHighlight}
               onColumnClick={onColumnClick}
+              selectedTable={selectedTable || undefined}
+              selectedColumn={selectedColumn || undefined}
+            />
+          )}
+          {addJoinDialogOpen === concept.id && (
+            <AddJoinDialog
+              isOpen={true}
+              onClose={() => {
+                setAddJoinDialogOpen(null);
+                onDialogClose?.();
+              }}
+              onSave={(join) => {
+                handleAddJoin(concept.id, join);
+                setAddJoinDialogOpen(null);
+                onDialogClose?.();
+              }}
+              concept={concept}
+              schema={schema}
+              onTableHighlight={onTableHighlight}
               selectedTable={selectedTable || undefined}
               selectedColumn={selectedColumn || undefined}
             />
@@ -379,8 +413,9 @@ export function ConceptSuggestionView({
                         </button>
                         <button
                           onClick={() => {
-                            // TODO: Implement add join
+                            setAddJoinDialogOpen(concept.id);
                             setMenuOpen(null);
+                            onDialogOpen?.();
                           }}
                           className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                         >

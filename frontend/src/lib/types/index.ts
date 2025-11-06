@@ -196,6 +196,14 @@ export interface RelationshipsRequest extends ScopedRequest {
   modelingHints?: Record<string, any>
 }
 
+export interface Relationship {
+  id: string
+  fromConceptId: string
+  toConceptId: string
+  name?: string
+  confidence?: number
+}
+
 export interface ConceptWithLikelihood {
   concept: ConceptJSON
   likelihood: number

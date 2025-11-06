@@ -6,7 +6,8 @@ import type {
   ClusterRequest,
   JobCreateResponse,
   JobStatusResponse,
-  ConceptSuggestion
+  ConceptSuggestion,
+  Relationship
 } from '@/lib/types'
 
 /**
@@ -157,6 +158,28 @@ export const mockApi = {
     async getStatus(jobId: string): Promise<JobStatusResponse> {
       const response = await axiosInstance.get<JobStatusResponse>(`/mock/jobs/${jobId}`)
       return response.data
+    },
+  },
+
+  relationships: {
+    /**
+     * Suggest relationships between concepts (mock)
+     */
+    async suggest(databaseId: string): Promise<Relationship[]> {
+      const response = await axiosInstance.get<Relationship[]>(
+        `/mock/databases/${databaseId}/relationships/suggest`
+      )
+      return response.data
+    },
+
+    /**
+     * Confirm relationships (mock)
+     */
+    async confirm(databaseId: string, relationships: Relationship[]): Promise<void> {
+      await axiosInstance.post(
+        `/mock/databases/${databaseId}/relationships/confirm`,
+        { relationships }
+      )
     },
   },
 }

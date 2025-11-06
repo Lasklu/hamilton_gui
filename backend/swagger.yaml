@@ -366,6 +366,87 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
 
+  /databases/{databaseId}/relationships/suggest:
+    get:
+      tags: [Databases, Relationships]
+      summary: Suggest relationships between concepts
+      description: >
+        Generate relationship suggestions between confirmed concepts in a database.
+        Returns relationships with confidence scores based on foreign key analysis,
+        naming patterns, and semantic understanding.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '200':
+          description: List of suggested relationships
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, fromConceptId, toConceptId]
+                  properties:
+                    id: { type: string, example: "rel_abc123" }
+                    fromConceptId: { type: string, example: "concept_1_users" }
+                    toConceptId: { type: string, example: "concept_10_orders" }
+                    name: { type: string, example: "places" }
+                    confidence: { type: number, minimum: 0, maximum: 1, example: 0.95 }
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /databases/{databaseId}/relationships/confirm:
+    post:
+      tags: [Databases, Relationships]
+      summary: Confirm and save relationships
+      description: >
+        Save the confirmed relationships between concepts for a database.
+        These relationships will be used to generate the ontology.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [relationships]
+              properties:
+                relationships:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, fromConceptId, toConceptId]
+                    properties:
+                      id: { type: string }
+                      fromConceptId: { type: string }
+                      toConceptId: { type: string }
+                      name: { type: string }
+                      confidence: { type: number }
+      responses:
+        '200':
+          description: Relationships confirmed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Relationships confirmed successfully" }
+                  relationshipCount: { type: integer, example: 5 }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /jobs/{jobId}:
     get:
       tags: [Jobs]
@@ -548,6 +629,66 @@ paths:
                   success: { type: boolean, example: true }
                   message: { type: string, example: "Clustering saved successfully" }
                   clustering: { $ref: '#/components/schemas/ClusteringSuggestions' }
+
+  /mock/databases/{databaseId}/relationships/suggest:
+    get:
+      tags: [Mock]
+      summary: "[MOCK] Suggest relationships between concepts"
+      description: Mock endpoint that returns fake relationship suggestions with confidence scores.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '200':
+          description: Mock relationship suggestions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, fromConceptId, toConceptId]
+                  properties:
+                    id: { type: string }
+                    fromConceptId: { type: string }
+                    toConceptId: { type: string }
+                    name: { type: string }
+                    confidence: { type: number, minimum: 0, maximum: 1 }
+
+  /mock/databases/{databaseId}/relationships/confirm:
+    post:
+      tags: [Mock]
+      summary: "[MOCK] Confirm relationships"
+      description: Mock endpoint that simulates confirming relationships.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [relationships]
+              properties:
+                relationships:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, fromConceptId, toConceptId]
+                    properties:
+                      id: { type: string }
+                      fromConceptId: { type: string }
+                      toConceptId: { type: string }
+                      name: { type: string }
+                      confidence: { type: number }
+      responses:
+        '200':
+          description: Mock relationships confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Relationships confirmed successfully" }
 
 components:
   parameters:

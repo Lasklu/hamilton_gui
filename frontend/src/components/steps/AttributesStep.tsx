@@ -33,6 +33,7 @@ export function AttributesStep({
     column: string
   } | null>(null)
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
+  const [highlightedTables, setHighlightedTables] = useState<string[]>([])
 
   const client = useMockApi ? mockClient : apiClient
   const hasInitialized = useRef(false)
@@ -188,6 +189,8 @@ export function AttributesStep({
   }
 
   const handleTableHighlight = (tables: string[]) => {
+    // Set the highlighted tables for the database viewer
+    setHighlightedTables(tables)
     // Set the first table as selected for highlighting
     if (tables.length > 0) {
       setSelectedTable(tables[0])
@@ -364,6 +367,7 @@ export function AttributesStep({
                             tables: cluster!.tables
                           }}
                           schema={clusterSchema}
+                          highlightedTables={highlightedTables}
                           clickableColumns={true}
                           onColumnClick={handleColumnClick}
                           className="h-full"

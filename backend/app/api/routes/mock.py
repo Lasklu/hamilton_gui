@@ -14,6 +14,7 @@ from app.models.clustering import (
     ClusterInfo,
 )
 from app.models.concept import Concept, ConceptSuggestion, ConceptAttribute, ConceptIDAttribute
+from app.models.relationship import Relationship, RelationshipConfirmRequest
 from app.models.common import ErrorResponse, TableRef
 from app.models.job import JobType, JobCreateResponse, JobStatus
 from app.core.job_manager import job_manager
@@ -1020,5 +1021,87 @@ async def mock_save_attributes(
         "message": f"Saved attributes for concept {concept_id}",
         "conceptId": concept_id,
         "attributeCount": len(attributes.get("attributes", []))
+    }
+
+
+# ===== RELATIONSHIPS ENDPOINTS =====
+
+@router.get(
+    "/databases/{database_id}/relationships/suggest",
+    response_model=list[Relationship],
+    summary="[MOCK] Suggest relationships between concepts",
+    description="Mock endpoint that returns relationship suggestions with confidence scores.",
+)
+async def mock_suggest_relationships(database_id: str) -> list[Relationship]:
+    """
+    Mock endpoint that generates sample relationships between concepts.
+    Returns a few example relationships with confidence scores.
+    """
+    # Simulate some delay for API call
+    await asyncio.sleep(1.5)
+    
+    # Generate mock relationships
+    # In a real implementation, this would analyze the confirmed concepts
+    # and suggest relationships based on foreign keys, naming patterns, etc.
+    
+    mock_relationships = [
+        Relationship(
+            id="rel_1",
+            fromConceptId="concept_1_users",
+            toConceptId="concept_10_orders",
+            name="places",
+            confidence=0.95
+        ),
+        Relationship(
+            id="rel_2",
+            fromConceptId="concept_10_orders",
+            toConceptId="concept_4_products",
+            name="contains",
+            confidence=0.92
+        ),
+        Relationship(
+            id="rel_3",
+            fromConceptId="concept_1_users",
+            toConceptId="concept_6_product_reviews",
+            name="writes",
+            confidence=0.88
+        ),
+        Relationship(
+            id="rel_4",
+            fromConceptId="concept_4_products",
+            toConceptId="concept_2_product_categories",
+            name="belongs_to",
+            confidence=0.90
+        ),
+        Relationship(
+            id="rel_5",
+            fromConceptId="concept_15_warehouses",
+            toConceptId="concept_7_product_inventory_management",
+            name="stores",
+            confidence=0.87
+        ),
+    ]
+    
+    return mock_relationships
+
+
+@router.post(
+    "/databases/{database_id}/relationships/confirm",
+    response_model=dict,
+    summary="[MOCK] Confirm relationships",
+    description="Mock endpoint that simulates confirming relationships.",
+)
+async def mock_confirm_relationships(
+    database_id: str,
+    request: RelationshipConfirmRequest,
+) -> dict:
+    """
+    Mock endpoint to confirm and save relationships.
+    In a real implementation, this would persist relationships to a database.
+    """
+    return {
+        "message": f"Confirmed {len(request.relationships)} relationship(s)",
+        "databaseId": database_id,
+        "relationshipCount": len(request.relationships)
     }
 

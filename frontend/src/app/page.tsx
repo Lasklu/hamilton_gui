@@ -6,6 +6,7 @@ import { DatabaseUploadStep } from '@/components/steps/DatabaseUploadStep'
 import { DatabaseClusteringStep } from '@/components/steps/DatabaseClusteringStep'
 import { ConceptsStep } from '@/components/steps/ConceptsStep'
 import { AttributesStep } from '@/components/steps/AttributesStep'
+import { RelationshipsStep } from '@/components/steps/RelationshipsStep'
 import type { ClusteringResult, Concept } from '@/lib/types'
 
 const STEPS = [
@@ -66,14 +67,15 @@ export default function Home() {
     }
   }
 
-  // Show/hide progress bar for concepts and attributes steps (steps 2 and 3)
+  // Show/hide progress bar for concepts, attributes, and relationships steps (steps 2, 3, and 4)
   const isConceptsStep = currentStep === 2
   const isAttributesStep = currentStep === 3
-  const shouldHideProgressBar = isConceptsStep || isAttributesStep
+  const isRelationshipsStep = currentStep === 4
+  const shouldHideProgressBar = isConceptsStep || isAttributesStep || isRelationshipsStep
 
-  // Initialize progress bar as hidden on concepts and attributes steps
+  // Initialize progress bar as hidden on concepts, attributes, and relationships steps
   useEffect(() => {
-    if (currentStep === 2 || currentStep === 3) {
+    if (currentStep === 2 || currentStep === 3 || currentStep === 4) {
       setShowProgressBar(false)
     } else {
       setShowProgressBar(true)
@@ -96,8 +98,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-      {/* Debug Mode Toggle */}
-      <div className="fixed top-4 right-4 z-50">
+      {/* Debug Mode Toggle - Bottom Right */}
+      <div className="fixed bottom-4 right-4 z-50">
         <label className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
           <input
             type="checkbox"
@@ -174,7 +176,13 @@ export default function Home() {
       )}
 
       {/* Main Content */}
-      <div className={currentStep === 0 ? "max-w-7xl mx-auto px-4 py-8" : ""}>
+      <div className={
+        currentStep === 0 
+          ? "max-w-7xl mx-auto px-4 py-8" 
+          : currentStep === 4 
+            ? "flex flex-col h-screen" 
+            : ""
+      }>
         {currentStep === 0 && (
           <DatabaseUploadStep onSuccess={handleDatabaseUploaded} useMockApi={useMockApi} />
         )}
@@ -210,8 +218,18 @@ export default function Home() {
           />
         )}
 
-        {/* Placeholder for other steps */}
-        {currentStep > 3 && (
+        {/* Relationships Step */}
+        {currentStep === 4 && databaseId && clusteringResult && (
+          <RelationshipsStep
+            databaseId={databaseId}
+            concepts={concepts}
+            useMockApi={useMockApi}
+            onComplete={() => setCurrentStep(5)}
+          />
+        )}
+
+        {/* Placeholder for export step */}
+        {currentStep > 4 && (
           <div className="text-center py-12">
             <h2 className="text-2xl font-semibold mb-4">
               Step {currentStep + 1}: {STEPS[currentStep].label}
