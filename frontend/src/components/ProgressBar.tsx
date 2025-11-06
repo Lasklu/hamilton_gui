@@ -8,9 +8,10 @@ interface Step {
 interface ProgressBarProps {
   steps: Step[]
   currentStep: number
+  onStepClick?: (stepIndex: number) => void
 }
 
-export function ProgressBar({ steps, currentStep }: ProgressBarProps) {
+export function ProgressBar({ steps, currentStep, onStepClick }: ProgressBarProps) {
   return (
     <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm">
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -19,12 +20,15 @@ export function ProgressBar({ steps, currentStep }: ProgressBarProps) {
             const isCompleted = index < currentStep
             const isCurrent = index === currentStep
             const isUpcoming = index > currentStep
+            const isClickable = onStepClick && index <= currentStep
 
             return (
               <div key={step.id} className="flex items-center flex-1">
                 {/* Step Circle */}
                 <div className="flex flex-col items-center">
-                  <div
+                  <button
+                    onClick={() => isClickable && onStepClick(index)}
+                    disabled={!isClickable}
                     className={cn(
                       'w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm transition-all',
                       isCompleted &&
@@ -32,7 +36,9 @@ export function ProgressBar({ steps, currentStep }: ProgressBarProps) {
                       isCurrent &&
                         'bg-primary-600 text-white ring-4 ring-primary-100 dark:ring-primary-900',
                       isUpcoming &&
-                        'bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                        'bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+                      isClickable && 'cursor-pointer hover:ring-4 hover:ring-primary-200 dark:hover:ring-primary-800',
+                      !isClickable && 'cursor-default'
                     )}
                   >
                     {isCompleted ? (
@@ -50,14 +56,16 @@ export function ProgressBar({ steps, currentStep }: ProgressBarProps) {
                     ) : (
                       index + 1
                     )}
-                  </div>
+                  </button>
                   <span
                     className={cn(
                       'mt-2 text-xs font-medium text-center whitespace-nowrap',
                       isCurrent && 'text-primary-600 dark:text-primary-400',
                       isCompleted && 'text-gray-700 dark:text-gray-300',
-                      isUpcoming && 'text-gray-500 dark:text-gray-400'
+                      isUpcoming && 'text-gray-500 dark:text-gray-400',
+                      isClickable && 'cursor-pointer hover:text-primary-700 dark:hover:text-primary-300'
                     )}
+                    onClick={() => isClickable && onStepClick(index)}
                   >
                     {step.label}
                   </span>

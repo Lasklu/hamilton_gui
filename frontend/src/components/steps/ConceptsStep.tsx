@@ -386,7 +386,7 @@ export function ConceptsStep({
                     }}
                     className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
                       isCurrent
-                        ? 'bg-blue-600 text-white shadow-md'
+                        ? 'bg-primary-500 text-white shadow-md'
                         : isConfirmed
                         ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
                         : hasProcessed
@@ -475,7 +475,7 @@ export function ConceptsStep({
                 {!currentConcepts.confirmed && (
                   <button
                     onClick={handleConfirmCluster}
-                    className="mt-4 w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+                    className="mt-4 w-full py-3 px-4 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors shadow-sm"
                   >
                     Confirm Concepts for This Cluster
                   </button>

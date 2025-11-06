@@ -741,7 +741,7 @@ export default function ClusteringGraph({
         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
           <button
             onClick={handleSave}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center gap-2 transition-colors"
+            className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg shadow-lg font-semibold flex items-center gap-2 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

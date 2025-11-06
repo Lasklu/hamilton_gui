@@ -21,9 +21,8 @@ interface AddIdAttributeDialogProps {
 
 type JoinWorkflowState = 
   | { phase: 'id-selection' } // User is selecting ID attribute
-  | { phase: 'join-step-1'; idTable: string; idColumn: string } // Select existing table
-  | { phase: 'join-step-2'; idTable: string; idColumn: string; existingTable: string } // Select column in existing table
-  | { phase: 'join-step-3'; idTable: string; idColumn: string; existingTable: string; existingColumn: string } // Select column in new table
+  | { phase: 'join-step-1'; idTable: string; idColumn: string } // Select column in existing table (table is implicit from attribute)
+  | { phase: 'join-step-2'; idTable: string; idColumn: string; existingTable: string; existingColumn: string } // Select column in new table
   | { phase: 'join-complete'; idTable: string; idColumn: string; existingTable: string; existingColumn: string; newColumn: string };
 
 export function AddIdAttributeDialog({
@@ -109,22 +108,22 @@ export function AddIdAttributeDialog({
   useEffect(() => {
     // Only process if column actually changed
     if (selectedColumn === prevSelectedColumnRef.current) return;
-    prevSelectedColumnRef.current = selectedColumn;
+    prevSelectedColumnRef.current = selectedColumn ?? null;
 
     if (!selectedColumn || !selectedTable) return;
 
-    // Step 2: Selecting column in existing table
-    if (joinWorkflow.phase === 'join-step-2' && selectedTable === joinWorkflow.existingTable) {
+    // Step 1: Selecting column in existing table (also determines which existing table)
+    if (joinWorkflow.phase === 'join-step-1' && existingTables.has(selectedTable)) {
       setJoinWorkflow({
-        phase: 'join-step-3',
+        phase: 'join-step-2',
         idTable: joinWorkflow.idTable,
         idColumn: joinWorkflow.idColumn,
-        existingTable: joinWorkflow.existingTable,
+        existingTable: selectedTable,
         existingColumn: selectedColumn,
       });
     }
-    // Step 3: Selecting column in new table
-    else if (joinWorkflow.phase === 'join-step-3' && selectedTable === joinWorkflow.idTable) {
+    // Step 2: Selecting column in new table
+    else if (joinWorkflow.phase === 'join-step-2' && selectedTable === joinWorkflow.idTable) {
       setJoinWorkflow({
         phase: 'join-complete',
         idTable: joinWorkflow.idTable,
@@ -134,7 +133,7 @@ export function AddIdAttributeDialog({
         newColumn: selectedColumn,
       });
     }
-  }, [selectedColumn, selectedTable, joinWorkflow]);
+  }, [selectedColumn, selectedTable, joinWorkflow, existingTables]);
 
   // Table highlighting based on workflow phase
   useEffect(() => {
@@ -144,12 +143,9 @@ export function AddIdAttributeDialog({
       // Highlight all cluster tables for ID selection
       onTableHighlight(clusterTables);
     } else if (joinWorkflow.phase === 'join-step-1') {
-      // No highlighting during table button selection
-      onTableHighlight([]);
+      // Highlight tables with existing ID attributes (grey out others)
+      onTableHighlight(Array.from(existingTables));
     } else if (joinWorkflow.phase === 'join-step-2') {
-      // Highlight only the existing table
-      onTableHighlight([joinWorkflow.existingTable]);
-    } else if (joinWorkflow.phase === 'join-step-3') {
       // Highlight only the new ID table
       onTableHighlight([joinWorkflow.idTable]);
     } else {
@@ -159,7 +155,7 @@ export function AddIdAttributeDialog({
     return () => {
       if (onTableHighlight) onTableHighlight([]);
     };
-  }, [isOpen, showExternalTableList, onTableHighlight, joinWorkflow, clusterTables]);
+  }, [isOpen, showExternalTableList, onTableHighlight, joinWorkflow, clusterTables, existingTables]);
 
   // Handlers
   const handleColumnClickInDialog = (tableName: string, columnName: string) => {
@@ -172,16 +168,16 @@ export function AddIdAttributeDialog({
     if (joinWorkflow.phase === 'id-selection') {
       onColumnClick?.(tableName, columnName);
     }
-    // During join workflow, handle internally
-    else if (joinWorkflow.phase === 'join-step-2' && tableName === joinWorkflow.existingTable) {
+    // During join step 1, handle internally - selecting column in existing table
+    else if (joinWorkflow.phase === 'join-step-1' && existingTables.has(tableName)) {
       setJoinWorkflow({
-        phase: 'join-step-3',
+        phase: 'join-step-2',
         idTable: joinWorkflow.idTable,
         idColumn: joinWorkflow.idColumn,
-        existingTable: joinWorkflow.existingTable,
+        existingTable: tableName,
         existingColumn: columnName,
       });
-    } else if (joinWorkflow.phase === 'join-step-3' && tableName === joinWorkflow.idTable) {
+    } else if (joinWorkflow.phase === 'join-step-2' && tableName === joinWorkflow.idTable) {
       setJoinWorkflow({
         phase: 'join-complete',
         idTable: joinWorkflow.idTable,
@@ -193,13 +189,14 @@ export function AddIdAttributeDialog({
     }
   };
 
-  const handleSelectExistingTable = (table: string) => {
+  const handleSelectExistingTable = (table: string, column: string) => {
     if (joinWorkflow.phase === 'join-step-1') {
       setJoinWorkflow({
         phase: 'join-step-2',
         idTable: joinWorkflow.idTable,
         idColumn: joinWorkflow.idColumn,
         existingTable: table,
+        existingColumn: column,
       });
     }
   };
@@ -264,10 +261,10 @@ export function AddIdAttributeDialog({
   const getColumnHighlight = (colName: string): boolean => {
     if (joinWorkflow.phase === 'id-selection') {
       return !showExternalTableList && selectedColumn === colName;
+    } else if (joinWorkflow.phase === 'join-step-1') {
+      return selectedColumn === colName; // During step 1, show selected column
     } else if (joinWorkflow.phase === 'join-step-2') {
-      return selectedColumn === colName; // During step 2, show selected column
-    } else if (joinWorkflow.phase === 'join-step-3') {
-      return joinWorkflow.existingColumn === colName || selectedColumn === colName;
+      return selectedColumn === colName;
     } else if (joinWorkflow.phase === 'join-complete') {
       return joinWorkflow.newColumn === colName;
     }
@@ -363,84 +360,55 @@ export function AddIdAttributeDialog({
 
                 {/* Step Indicator */}
                 <div className="text-xs text-gray-600 font-medium">
-                  {joinWorkflow.phase === 'join-step-1' && 'Current Step: 1 of 3'}
-                  {joinWorkflow.phase === 'join-step-2' && 'Current Step: 2 of 3'}
-                  {joinWorkflow.phase === 'join-step-3' && 'Current Step: 3 of 3'}
+                  {joinWorkflow.phase === 'join-step-1' && 'Current Step: 1 of 2'}
+                  {joinWorkflow.phase === 'join-step-2' && 'Current Step: 2 of 2'}
                   {joinWorkflow.phase === 'join-complete' && 'Join Configuration Complete'}
                 </div>
 
-                {/* Step 1: Select Existing Table */}
-                <div className={`p-3 rounded ${joinWorkflow.phase === 'join-step-1' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50'}`}>
+                {/* Step 1: Select Attribute in Existing Table */}
+                <div className={`p-3 rounded ${joinWorkflow.phase === 'join-step-1' ? 'bg-primary-100 border-2 border-primary-500' : 'bg-gray-50'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-gray-700">
-                      Step 1: Select existing table to join with
+                      Step 1: Select attribute in existing table to join with
                     </span>
                     {joinWorkflow.phase !== 'join-step-1' && (
                       <span className="text-xs text-green-600 font-medium">
-                        ✓ {joinWorkflow.existingTable}
+                        ✓ {joinWorkflow.existingTable}.{joinWorkflow.existingColumn}
                       </span>
                     )}
                   </div>
                   {joinWorkflow.phase === 'join-step-1' ? (
                     <div>
-                      <p className="text-xs text-gray-600 mb-2">
-                        Select a table that is already part of this concept:
+                      <p className="text-xs text-gray-600 mb-3">
+                        👉 Click on a column in one of the highlighted tables in the database viewer on the left
                       </p>
-                      <div className="grid grid-cols-2 gap-2">
+                      <p className="text-xs text-gray-500 mb-2">
+                        Available tables with ID attributes:
+                      </p>
+                      <div className="flex flex-wrap gap-1">
                         {Array.from(existingTables).map(table => (
-                          <button
+                          <span
                             key={table}
-                            onClick={() => handleSelectExistingTable(table)}
-                            className="text-left p-2 rounded text-sm bg-white border border-gray-300 hover:border-blue-500 hover:bg-blue-50 transition-colors"
+                            className="px-2 py-1 rounded text-xs bg-white border border-gray-300 text-gray-700"
                           >
                             {table}
-                          </button>
+                          </span>
                         ))}
                       </div>
                     </div>
                   ) : (
                     <p className="text-xs text-gray-600">
-                      Table: {joinWorkflow.existingTable}
+                      Attribute: {joinWorkflow.existingTable}.{joinWorkflow.existingColumn}
                     </p>
                   )}
                 </div>
 
-                {/* Step 2: Select Column in Existing Table */}
+                {/* Step 2: Select Column in New Table */}
                 {joinWorkflow.phase !== 'join-step-1' && (
-                  <div className={`p-3 rounded ${joinWorkflow.phase === 'join-step-2' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50'}`}>
+                  <div className={`p-3 rounded ${joinWorkflow.phase === 'join-step-2' ? 'bg-primary-100 border-2 border-primary-500' : 'bg-gray-50'}`}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">
-                        Step 2: Select join column in {joinWorkflow.existingTable}
-                      </span>
-                      {joinWorkflow.phase !== 'join-step-2' && (
-                        <span className="text-xs text-green-600 font-medium">
-                          ✓ {joinWorkflow.existingColumn}
-                        </span>
-                      )}
-                    </div>
-                    {joinWorkflow.phase === 'join-step-2' ? (
-                      <div className="space-y-2">
-                        <p className="text-xs text-blue-700 font-medium">
-                          👉 Click on a column in the <span className="font-bold">{joinWorkflow.existingTable}</span> table in the database viewer on the left
-                        </p>
-                        <p className="text-xs text-gray-600 italic">
-                          All other tables are greyed out.
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-600">
-                        Column: {joinWorkflow.existingColumn}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Step 3: Select Column in New Table */}
-                {(joinWorkflow.phase === 'join-step-3' || joinWorkflow.phase === 'join-complete') && (
-                  <div className={`p-3 rounded ${joinWorkflow.phase === 'join-step-3' ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-50'}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">
-                        Step 3: Select join column in {joinWorkflow.idTable}
+                        Step 2: Select join column in {joinWorkflow.idTable}
                       </span>
                       {joinWorkflow.phase === 'join-complete' && (
                         <span className="text-xs text-green-600 font-medium">
@@ -448,9 +416,9 @@ export function AddIdAttributeDialog({
                         </span>
                       )}
                     </div>
-                    {joinWorkflow.phase === 'join-step-3' ? (
+                    {joinWorkflow.phase === 'join-step-2' ? (
                       <div className="space-y-2">
-                        <p className="text-xs text-blue-700 font-medium">
+                        <p className="text-xs text-primary-700 font-medium">
                           👉 Click on a column in the <span className="font-bold">{joinWorkflow.idTable}</span> table in the database viewer on the left
                         </p>
                         <p className="text-xs text-gray-600 italic">
@@ -587,13 +555,13 @@ export function AddIdAttributeDialog({
   );
 
   if (inline) {
-    return <div className="border border-blue-500 dark:border-blue-400 rounded-lg p-6 bg-white dark:bg-gray-800">{dialogContent}</div>;
+    return <div className="border border-primary-500 dark:border-primary-400 rounded-lg p-6 bg-white dark:bg-gray-800">{dialogContent}</div>;
   }
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none">
       <div className="h-full flex items-center justify-center px-4 pointer-events-none">
-        <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto pointer-events-auto border-4 border-blue-500">
+        <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto pointer-events-auto border-4 border-primary-500">
           {dialogContent}
         </div>
       </div>

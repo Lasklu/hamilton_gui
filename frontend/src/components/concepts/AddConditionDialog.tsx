@@ -334,7 +334,7 @@ export function AddConditionDialog({
                 {/* Step-by-step join configuration */}
                 <div className="space-y-3">
                   {/* Step 1: Select column in NEW table */}
-                  <div className={`p-3 rounded ${joinStep === 'select-new-column' ? 'bg-blue-100 dark:bg-blue-900/20 border-2 border-blue-500' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                  <div className={`p-3 rounded ${joinStep === 'select-new-column' ? 'bg-primary-100 dark:bg-primary-900/20 border-2 border-primary-500' : 'bg-gray-50 dark:bg-gray-800'}`}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                         Step 1: Select join column in {selectedTable}
@@ -344,7 +344,7 @@ export function AddConditionDialog({
                       )}
                     </div>
                     {joinStep === 'select-new-column' ? (
-                      <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+                      <p className="text-xs text-primary-700 dark:text-primary-300 font-medium">
                         👉 Click on a column in the <span className="font-bold">{selectedTable}</span> table in the database viewer on the left
                       </p>
                     ) : joinToColumn ? (
@@ -354,7 +354,7 @@ export function AddConditionDialog({
 
                   {/* Step 2: Select column in EXISTING table */}
                   {joinToColumn && (
-                    <div className={`p-3 rounded ${joinStep === 'select-existing-column' ? 'bg-blue-100 dark:bg-blue-900/20 border-2 border-blue-500' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                    <div className={`p-3 rounded ${joinStep === 'select-existing-column' ? 'bg-primary-100 dark:bg-primary-900/20 border-2 border-primary-500' : 'bg-gray-50 dark:bg-gray-800'}`}>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                           Step 2: Select matching column from existing table
@@ -486,13 +486,13 @@ export function AddConditionDialog({
   );
 
   if (inline) {
-    return <div className="border border-blue-500 dark:border-blue-400 rounded-lg overflow-hidden flex flex-col bg-white dark:bg-gray-900">{dialogContent}</div>;
+    return <div className="border border-primary-500 dark:border-primary-400 rounded-lg overflow-hidden flex flex-col bg-white dark:bg-gray-900">{dialogContent}</div>;
   }
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none">
       <div className="h-full flex items-center justify-center px-4 pointer-events-none">
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto border-4 border-blue-500">
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col pointer-events-auto border-4 border-primary-500">
           {dialogContent}
         </div>
       </div>

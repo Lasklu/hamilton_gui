@@ -88,7 +88,7 @@ function ClusterCard({
   return (
     <div
       className={`border rounded-lg overflow-hidden transition-all ${
-        isDragOver ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700'
+        isDragOver ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700'
       }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -105,7 +105,7 @@ function ClusterCard({
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="flex-1 px-2 py-1 text-sm font-semibold border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-2 py-1 text-sm font-semibold border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleConfirm();

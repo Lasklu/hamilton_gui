@@ -253,7 +253,7 @@ export function ConceptSuggestionView({
     return (
       <div key={concept.id} style={{ marginLeft: `${depth * 20}px` }}>
         <div
-          className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-blue-300 dark:hover:border-blue-600 transition-colors bg-white dark:bg-gray-800"
+          className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-primary-300 dark:hover:border-primary-600 transition-colors bg-white dark:bg-gray-800"
           onMouseEnter={() => onConceptHover?.(concept.id)}
           onMouseLeave={() => onConceptHover?.(null)}
         >
@@ -286,12 +286,12 @@ export function ConceptSuggestionView({
                         if (e.key === 'Enter') handleSaveName(concept.id);
                         if (e.key === 'Escape') handleCancelEdit();
                       }}
-                      className="flex-1 px-2 py-1 text-sm border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      className="flex-1 px-2 py-1 text-sm border border-primary-500 rounded focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-white"
                       autoFocus
                     />
                     <button
                       onClick={() => handleSaveName(concept.id)}
-                      className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                      className="px-2 py-1 bg-primary-500 text-white text-xs rounded hover:bg-primary-600"
                     >
                       Save
                     </button>
@@ -424,16 +424,16 @@ export function ConceptSuggestionView({
               {concept.idAttributes?.map((idAttr, idIdx) => (
                 <div
                   key={idIdx}
-                  className="bg-blue-50 dark:bg-blue-900/20 rounded-md p-2 border border-blue-200 dark:border-blue-800"
+                  className="bg-primary-50 dark:bg-primary-900/20 rounded-md p-2 border border-primary-200 dark:border-primary-800"
                 >
                   <div className="flex flex-wrap gap-2">
                     {idAttr.attributes?.map((attr, attrIdx) => (
                       <span
                         key={attrIdx}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded text-xs font-mono group"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-primary-100 dark:bg-primary-900/40 text-primary-800 dark:text-primary-200 rounded text-xs font-mono group"
                       >
                         <span className="font-semibold">{attr.table}</span>
-                        <span className="text-blue-400 dark:text-blue-500">.</span>
+                        <span className="text-primary-400 dark:text-primary-500">.</span>
                         <span>{attr.column}</span>
                         <button
                           onClick={() => handleRemoveIdAttribute(concept.id, idIdx, attrIdx)}
@@ -445,7 +445,7 @@ export function ConceptSuggestionView({
                       </span>
                     )) || null}
                     {idAttr.attributes && idAttr.attributes.length > 1 && (
-                      <span className="text-xs text-blue-600 dark:text-blue-400 self-center">
+                      <span className="text-xs text-primary-600 dark:text-primary-400 self-center">
                         (Composite Key)
                       </span>
                     )}
@@ -524,7 +524,7 @@ export function ConceptSuggestionView({
 
         {/* Sub-concepts */}
         {hasSubConcepts && isExpanded && (
-          <div className="mt-2 space-y-2 pl-4 border-l-2 border-blue-200 dark:border-blue-800">
+          <div className="mt-2 space-y-2 pl-4 border-l-2 border-primary-200 dark:border-primary-800">
             {concept.subConcepts!.map(subConcept => renderConcept(subConcept, depth + 1))}
           </div>
         )}
@@ -545,7 +545,7 @@ export function ConceptSuggestionView({
         </div>
         <button
           onClick={onConceptCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium"
+          className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg transition-colors text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           New Concept

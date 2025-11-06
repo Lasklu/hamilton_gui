@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ProgressBar } from '@/components/ProgressBar'
 import { DatabaseUploadStep } from '@/components/steps/DatabaseUploadStep'
 import { DatabaseClusteringStep } from '@/components/steps/DatabaseClusteringStep'
@@ -21,6 +21,8 @@ export default function Home() {
   const [databaseId, setDatabaseId] = useState<string | null>(null)
   const [clusteringResult, setClusteringResult] = useState<ClusteringResult | null>(null)
   const [useMockApi, setUseMockApi] = useState(true) // Debug mode toggle
+  const [showProgressBar, setShowProgressBar] = useState(true)
+  const progressBarRef = useRef<HTMLDivElement>(null)
 
   const handleDatabaseUploaded = (dbId: string) => {
     setDatabaseId(dbId)
@@ -42,6 +44,43 @@ export default function Home() {
     setCurrentStep(3)
   }
 
+  const handleStepClick = (stepIndex: number) => {
+    // Only allow going back to completed steps
+    if (stepIndex <= currentStep) {
+      setCurrentStep(stepIndex)
+      // Show progress bar when navigating away from concepts step
+      if (stepIndex !== 2) {
+        setShowProgressBar(true)
+      }
+    }
+  }
+
+  // Show/hide progress bar for concepts step (step 2)
+  const isConceptsStep = currentStep === 2
+
+  // Initialize progress bar as hidden on concepts step
+  useEffect(() => {
+    if (currentStep === 2) {
+      setShowProgressBar(false)
+    } else {
+      setShowProgressBar(true)
+    }
+  }, [currentStep])
+
+  // Click outside to hide progress bar on concepts step
+  useEffect(() => {
+    if (!isConceptsStep || !showProgressBar) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (progressBarRef.current && !progressBarRef.current.contains(event.target as Node)) {
+        setShowProgressBar(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isConceptsStep, showProgressBar])
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
       {/* Debug Mode Toggle */}
@@ -51,7 +90,7 @@ export default function Home() {
             type="checkbox"
             checked={useMockApi}
             onChange={(e) => setUseMockApi(e.target.checked)}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+            className="w-4 h-4 text-primary-500 rounded focus:ring-2 focus:ring-primary-500"
           />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Mock API Mode
@@ -64,8 +103,62 @@ export default function Home() {
         </label>
       </div>
 
-      {/* Progress Bar */}
-      <ProgressBar steps={STEPS} currentStep={currentStep} />
+      {/* Progress Bar with toggle button on concepts step */}
+      {isConceptsStep ? (
+        <div>
+          {/* Show Button - Minimal arrow pointing down */}
+          {!showProgressBar && (
+            <button
+              onClick={() => setShowProgressBar(true)}
+              className="fixed top-0 left-1/2 -translate-x-1/2 z-40 bg-primary-500 hover:bg-primary-600 text-white p-1 rounded-b shadow-lg transition-colors"
+              aria-label="Show progress bar"
+            >
+              <svg 
+                className="w-5 h-5" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          )}
+          
+          {/* Progress Bar - Overlaid when visible */}
+          {showProgressBar && (
+            <div ref={progressBarRef} className="fixed top-0 left-0 right-0 z-40 shadow-lg">
+              <div className="relative">
+                <ProgressBar 
+                  steps={STEPS} 
+                  currentStep={currentStep} 
+                  onStepClick={handleStepClick}
+                />
+                {/* Hide Button - Minimal arrow pointing up */}
+                <button
+                  onClick={() => setShowProgressBar(false)}
+                  className="absolute top-2 right-4 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 p-1 rounded shadow transition-colors"
+                  aria-label="Hide progress bar"
+                >
+                  <svg 
+                    className="w-4 h-4" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <ProgressBar 
+          steps={STEPS} 
+          currentStep={currentStep} 
+          onStepClick={handleStepClick}
+        />
+      )}
 
       {/* Main Content */}
       <div className={currentStep === 0 ? "max-w-7xl mx-auto px-4 py-8" : ""}>

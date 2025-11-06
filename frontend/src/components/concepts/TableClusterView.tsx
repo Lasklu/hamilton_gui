@@ -177,7 +177,7 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
                   rx="8"
                   ry="8"
                   fill="white"
-                  stroke={isHighlighted ? '#10b981' : isHovered ? '#3b82f6' : '#d1d5db'}
+                  stroke={isHighlighted ? '#b20138' : isHovered ? '#ec4f63' : '#d1d5db'}
                   strokeWidth={isHighlighted ? '4' : isHovered ? '3' : '2'}
                   className="transition-all"
                   filter={isHighlighted || isHovered ? "url(#shadow)" : "none"}
@@ -191,7 +191,7 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
                     rx="8"
                     ry="8"
                     fill="none"
-                    stroke="#10b981"
+                    stroke="#b20138"
                     strokeWidth="8"
                     opacity="0.2"
                     className="animate-pulse"
@@ -204,14 +204,14 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
                   height={TABLE_HEADER_HEIGHT}
                   rx="8"
                   ry="8"
-                  fill={isHighlighted ? '#10b981' : '#3b82f6'}
+                  fill={isHighlighted ? '#b20138' : '#ec4f63'}
                   opacity="0.1"
                 />
                 <rect
                   y={TABLE_HEADER_HEIGHT}
                   width={TABLE_WIDTH}
                   height="2"
-                  fill={isHighlighted ? '#10b981' : '#3b82f6'}
+                  fill={isHighlighted ? '#b20138' : '#ec4f63'}
                 />
 
                 {/* Table name */}
@@ -251,7 +251,7 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
                           width={TABLE_WIDTH - 4}
                           height={TABLE_ROW_HEIGHT - 2}
                           rx="4"
-                          fill={isColumnHovered ? '#dbeafe' : '#f3f4f6'}
+                          fill={isColumnHovered ? '#ffe4e6' : '#f3f4f6'}
                         />
                       )}
                       
