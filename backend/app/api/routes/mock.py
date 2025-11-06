@@ -753,7 +753,7 @@ async def mock_generate_concepts(
                 job_obj.updatedAt = datetime.now()
             
             # Get clustering result to know which tables are in this cluster
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
             job_manager.update_progress(job.id, 0, 5, "Fetching cluster information...")
             
             clustering_result = _generate_mock_clustering(database_id)
@@ -766,14 +766,14 @@ async def mock_generate_concepts(
             if not cluster_info:
                 raise ValueError(f"Cluster {cluster_id} not found")
             
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
             job_manager.update_progress(job.id, 1, 5, "Analyzing table structures...")
             
             # Get schema to understand columns
             schema = await mock_get_database_schema(database_id)
             table_map = {table.name: table for table in schema.tables}
             
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
             job_manager.update_progress(job.id, 2, 5, "Identifying key attributes...")
             
             # Generate concepts - one concept per table in the cluster
@@ -800,7 +800,7 @@ async def mock_generate_concepts(
                     and col not in id_columns
                 ][:5]  # Limit to 5 attributes
                 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.1)
                 job_manager.update_progress(job.id, 3, 5, f"Generating concept for {table_name}...")
                 
                 # Create concept name from table name (capitalize and singularize roughly)
@@ -872,12 +872,12 @@ async def mock_generate_concepts(
                 )
                 concepts.append(concept)
             
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
             job_manager.update_progress(job.id, 4, 5, "Finalizing concepts...")
             
             result = ConceptSuggestion(concepts=concepts)
             
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
             job_manager.update_progress(job.id, 5, 5, "Complete!")
             
             # Complete the job
@@ -925,3 +925,100 @@ async def mock_get_all_concepts(database_id: str) -> ConceptSuggestion:
     Returns empty list for now.
     """
     return ConceptSuggestion(concepts=[])
+
+
+# ===== ATTRIBUTES ENDPOINTS =====
+
+@router.post(
+    "/databases/{database_id}/concepts/{concept_id}/attributes",
+    response_model=JobCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="[MOCK] Generate attributes for a concept",
+    description="Mock endpoint that starts a job to generate attribute suggestions for a concept.",
+)
+async def mock_generate_attributes(
+    database_id: str,
+    concept_id: str,
+) -> JobCreateResponse:
+    """
+    Mock attribute generation endpoint.
+    Simulates generating attribute suggestions with a background job.
+    """
+    # Create a job
+    job = job_manager.create_job(
+        job_type=JobType.CONCEPTS,  # Reuse CONCEPTS type or add ATTRIBUTES type
+        database_id=database_id,
+        parameters={"concept_id": concept_id}
+    )
+    
+    # Start background task to simulate attribute generation
+    async def simulate_attribute_generation():
+        try:
+            await asyncio.sleep(0.2)
+            job_manager.update_progress(job.id, 1, 3, "Analyzing concept structure...")
+            
+            # Generate mock attributes
+            mock_attributes = [
+                {
+                    "id": f"attr_{concept_id}_1",
+                    "name": "Name",
+                    "column": "name",
+                    "table": "main_table",
+                    "dataType": "VARCHAR",
+                    "isRequired": True
+                },
+                {
+                    "id": f"attr_{concept_id}_2",
+                    "name": "Description",
+                    "column": "description",
+                    "table": "main_table",
+                    "dataType": "TEXT",
+                    "isRequired": False
+                },
+                {
+                    "id": f"attr_{concept_id}_3",
+                    "name": "Created At",
+                    "column": "created_at",
+                    "table": "main_table",
+                    "dataType": "TIMESTAMP",
+                    "isRequired": True
+                }
+            ]
+            
+            await asyncio.sleep(0.2)
+            job_manager.update_progress(job.id, 2, 3, "Generating attributes...")
+            
+            result = {"attributes": mock_attributes}
+            
+            await asyncio.sleep(0.1)
+            job_manager.update_progress(job.id, 3, 3, "Complete!")
+            
+            job_manager.complete_job(job.id, result)
+        except Exception as e:
+            job_manager.fail_job(job.id, str(e))
+    
+    asyncio.create_task(simulate_attribute_generation())
+    
+    return JobCreateResponse(jobId=job.id)
+
+
+@router.post(
+    "/databases/{database_id}/concepts/{concept_id}/attributes/save",
+    response_model=dict,
+    summary="[MOCK] Save confirmed attributes",
+    description="Mock endpoint that saves confirmed attributes for a concept.",
+)
+async def mock_save_attributes(
+    database_id: str,
+    concept_id: str,
+    attributes: dict,
+) -> dict:
+    """
+    Mock endpoint to save confirmed attributes.
+    """
+    return {
+        "message": f"Saved attributes for concept {concept_id}",
+        "conceptId": concept_id,
+        "attributeCount": len(attributes.get("attributes", []))
+    }
+

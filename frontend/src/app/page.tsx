@@ -5,7 +5,8 @@ import { ProgressBar } from '@/components/ProgressBar'
 import { DatabaseUploadStep } from '@/components/steps/DatabaseUploadStep'
 import { DatabaseClusteringStep } from '@/components/steps/DatabaseClusteringStep'
 import { ConceptsStep } from '@/components/steps/ConceptsStep'
-import type { ClusteringResult } from '@/lib/types'
+import { AttributesStep } from '@/components/steps/AttributesStep'
+import type { ClusteringResult, Concept } from '@/lib/types'
 
 const STEPS = [
   { id: 'upload', label: 'Upload Database' },
@@ -20,6 +21,7 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState(0)
   const [databaseId, setDatabaseId] = useState<string | null>(null)
   const [clusteringResult, setClusteringResult] = useState<ClusteringResult | null>(null)
+  const [concepts, setConcepts] = useState<Record<string, { concepts: Concept[]; confirmed: boolean }>>({})
   const [useMockApi, setUseMockApi] = useState(true) // Debug mode toggle
   const [showProgressBar, setShowProgressBar] = useState(true)
   const progressBarRef = useRef<HTMLDivElement>(null)
@@ -44,6 +46,15 @@ export default function Home() {
     setCurrentStep(3)
   }
 
+  const handleConceptsUpdate = (updatedConcepts: Record<string, { concepts: Concept[]; confirmed: boolean }>) => {
+    setConcepts(updatedConcepts)
+  }
+
+  const handleAttributesComplete = () => {
+    // Move to relationships step
+    setCurrentStep(4)
+  }
+
   const handleStepClick = (stepIndex: number) => {
     // Only allow going back to completed steps
     if (stepIndex <= currentStep) {
@@ -55,21 +66,23 @@ export default function Home() {
     }
   }
 
-  // Show/hide progress bar for concepts step (step 2)
+  // Show/hide progress bar for concepts and attributes steps (steps 2 and 3)
   const isConceptsStep = currentStep === 2
+  const isAttributesStep = currentStep === 3
+  const shouldHideProgressBar = isConceptsStep || isAttributesStep
 
-  // Initialize progress bar as hidden on concepts step
+  // Initialize progress bar as hidden on concepts and attributes steps
   useEffect(() => {
-    if (currentStep === 2) {
+    if (currentStep === 2 || currentStep === 3) {
       setShowProgressBar(false)
     } else {
       setShowProgressBar(true)
     }
   }, [currentStep])
 
-  // Click outside to hide progress bar on concepts step
+  // Click outside to hide progress bar on concepts and attributes steps
   useEffect(() => {
-    if (!isConceptsStep || !showProgressBar) return
+    if (!shouldHideProgressBar || !showProgressBar) return
 
     const handleClickOutside = (event: MouseEvent) => {
       if (progressBarRef.current && !progressBarRef.current.contains(event.target as Node)) {
@@ -79,7 +92,7 @@ export default function Home() {
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isConceptsStep, showProgressBar])
+  }, [shouldHideProgressBar, showProgressBar])
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950">
@@ -103,8 +116,8 @@ export default function Home() {
         </label>
       </div>
 
-      {/* Progress Bar with toggle button on concepts step */}
-      {isConceptsStep ? (
+      {/* Progress Bar with toggle button on concepts and attributes steps */}
+      {shouldHideProgressBar ? (
         <div>
           {/* Show Button - Minimal arrow pointing down */}
           {!showProgressBar && (
@@ -182,11 +195,23 @@ export default function Home() {
             clusteringResult={clusteringResult}
             useMockApi={useMockApi}
             onComplete={handleConceptsComplete}
+            onConceptsUpdate={handleConceptsUpdate}
+          />
+        )}
+
+        {/* Attributes Step */}
+        {currentStep === 3 && databaseId && clusteringResult && (
+          <AttributesStep
+            databaseId={databaseId}
+            clusteringResult={clusteringResult}
+            concepts={concepts}
+            useMockApi={useMockApi}
+            onComplete={handleAttributesComplete}
           />
         )}
 
         {/* Placeholder for other steps */}
-        {currentStep > 2 && (
+        {currentStep > 3 && (
           <div className="text-center py-12">
             <h2 className="text-2xl font-semibold mb-4">
               Step {currentStep + 1}: {STEPS[currentStep].label}

@@ -16,6 +16,7 @@ interface ConceptsStepProps {
   clusteringResult: ClusteringResult;
   useMockApi?: boolean;
   onComplete?: () => void;
+  onConceptsUpdate?: (concepts: Record<string, { concepts: Concept[]; confirmed: boolean }>) => void;
 }
 
 type ProcessingState = 'idle' | 'generating' | 'complete';
@@ -31,6 +32,7 @@ export function ConceptsStep({
   clusteringResult,
   useMockApi = false,
   onComplete,
+  onConceptsUpdate,
 }: ConceptsStepProps) {
   const [schema, setSchema] = useState<DatabaseSchema | null>(null);
   const [currentClusterIndex, setCurrentClusterIndex] = useState(0);
@@ -88,6 +90,20 @@ export function ConceptsStep({
 
     fetchSchema();
   }, [databaseId, client]);
+
+  // Sync concepts to parent component
+  useEffect(() => {
+    if (onConceptsUpdate && clusterConcepts.size > 0) {
+      const conceptsRecord: Record<string, { concepts: Concept[]; confirmed: boolean }> = {};
+      clusterConcepts.forEach((value, key) => {
+        conceptsRecord[key.toString()] = {
+          concepts: value.concepts,
+          confirmed: value.confirmed,
+        };
+      });
+      onConceptsUpdate(conceptsRecord);
+    }
+  }, [clusterConcepts, onConceptsUpdate]);
 
   // Auto-generate concepts for current cluster if not already generated
   useEffect(() => {
@@ -167,6 +183,61 @@ export function ConceptsStep({
       toast.error('Failed to save concepts');
     }
   }, [currentCluster, clusterConcepts, databaseId, client, currentClusterIndex, clusteringResult.clusters.length, handleNext]);
+
+  const handleSkipCluster = useCallback(() => {
+    if (!currentCluster) return;
+
+    // Mark cluster as confirmed with empty concepts (skipped)
+    const updatedConcepts = new Map(clusterConcepts);
+    updatedConcepts.set(currentCluster.clusterId, {
+      clusterId: currentCluster.clusterId,
+      concepts: [],
+      confirmed: true,
+    });
+    setClusterConcepts(updatedConcepts);
+
+    toast.success(`Skipped ${currentCluster.name}`);
+
+    // Move to next cluster if available
+    if (currentClusterIndex < clusteringResult.clusters.length - 1) {
+      handleNext();
+    }
+  }, [currentCluster, clusterConcepts, currentClusterIndex, clusteringResult.clusters.length, handleNext]);
+
+  const handleConfirmAllSuggested = useCallback(async () => {
+    if (!currentCluster) return;
+
+    const concepts = clusterConcepts.get(currentCluster.clusterId);
+    if (!concepts) return;
+
+    // Simply confirm without any changes - accept all suggested concepts as-is
+    handleConfirmCluster();
+  }, [currentCluster, clusterConcepts, handleConfirmCluster]);
+
+  const handleConfirmAllClustersImmediately = useCallback(async () => {
+    // Confirm all clusters immediately without requiring individual confirmation
+    // This is useful in mock mode to quickly test the flow
+    const updatedConcepts = new Map(clusterConcepts);
+    
+    // Mark all clusters as confirmed
+    for (const cluster of clusteringResult.clusters) {
+      const existingConcepts = updatedConcepts.get(cluster.clusterId);
+      if (existingConcepts) {
+        updatedConcepts.set(cluster.clusterId, {
+          ...existingConcepts,
+          confirmed: true,
+        });
+      }
+    }
+    
+    setClusterConcepts(updatedConcepts);
+    toast.success('All clusters confirmed immediately!');
+    
+    // Wait a moment then proceed
+    setTimeout(() => {
+      onComplete?.();
+    }, 500);
+  }, [clusterConcepts, clusteringResult.clusters, onComplete]);
 
   const handleConfirmAll = useCallback(async () => {
     // Check if all clusters have been confirmed
@@ -351,8 +422,19 @@ export function ConceptsStep({
                 Review and confirm concepts for each cluster
               </p>
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Progress: {confirmedCount} / {totalClusters} clusters confirmed
+            <div className="flex items-center gap-3">
+              {useMockApi && (
+                <button
+                  onClick={handleConfirmAllClustersImmediately}
+                  className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded-lg font-medium transition-colors shadow-sm"
+                  title="Confirm all clusters immediately (Mock Mode)"
+                >
+                  ⚡ Confirm All Immediately
+                </button>
+              )}
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Progress: {confirmedCount} / {totalClusters} clusters confirmed
+              </div>
             </div>
           </div>
 
@@ -473,12 +555,20 @@ export function ConceptsStep({
                   className="flex-1 overflow-hidden"
                 />
                 {!currentConcepts.confirmed && (
-                  <button
-                    onClick={handleConfirmCluster}
-                    className="mt-4 w-full py-3 px-4 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium transition-colors shadow-sm"
-                  >
-                    Confirm Concepts for This Cluster
-                  </button>
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      onClick={handleSkipCluster}
+                      className="flex-1 py-3 px-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg font-medium transition-colors shadow-sm"
+                    >
+                      Skip Cluster
+                    </button>
+                    <button
+                      onClick={handleConfirmAllSuggested}
+                      className="flex-1 py-3 px-4 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors shadow-sm"
+                    >
+                      Confirm As Suggested
+                    </button>
+                  </div>
                 )}
                 {currentConcepts.confirmed && (
                   <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center text-green-800 dark:text-green-200 font-medium">

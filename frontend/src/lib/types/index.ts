@@ -107,6 +107,20 @@ export interface Concept {
   joins?: string[]
 }
 
+// Attribute types (for the attributes editing step)
+export interface Attribute {
+  id: string
+  name: string
+  column: string
+  table: string
+  dataType: string
+  isRequired: boolean
+  conditions?: string[]
+  transform?: string
+  joins?: string[]
+  staticValue?: string // Alternative to table/column reference
+}
+
 export interface ConceptSuggestion {
   concepts: Concept[]
 }
