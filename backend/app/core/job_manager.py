@@ -42,12 +42,20 @@ class JobManager:
     
     def get_job(self, job_id: str) -> Optional[Job]:
         """Get job by ID"""
-        return self._jobs.get(job_id)
+        job = self._jobs.get(job_id)
+        if job:
+            logger.debug(f"get_job({job_id}): status={job.status}, progress={job.progress}")
+        return job
     
     def update_progress(self, job_id: str, current: int, total: int, message: Optional[str] = None):
         """Update job progress"""
         job = self._jobs.get(job_id)
         if not job:
+            return
+        
+        # Don't update progress if job is already completed or failed
+        if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+            logger.debug(f"Skipping progress update for {job_id} - job already {job.status}")
             return
         
         percentage = (current / total * 100) if total > 0 else 0
@@ -64,8 +72,10 @@ class JobManager:
         """Mark job as completed with result"""
         job = self._jobs.get(job_id)
         if not job:
+            logger.warning(f"complete_job called for non-existent job: {job_id}")
             return
         
+        logger.info(f"Marking job {job_id} as COMPLETED")
         job.status = JobStatus.COMPLETED
         job.result = result
         job.progress = JobProgress(current=100, total=100, percentage=100.0, message="Completed")
@@ -75,6 +85,8 @@ class JobManager:
         # Clean up task
         if job_id in self._tasks:
             del self._tasks[job_id]
+        
+        logger.info(f"Job {job_id} marked as COMPLETED with result type: {type(result).__name__}")
     
     def fail_job(self, job_id: str, error: str):
         """Mark job as failed with error"""
@@ -102,13 +114,17 @@ class JobManager:
         try:
             job = self._jobs.get(job_id)
             if not job:
+                logger.warning(f"execute_job called for non-existent job: {job_id}")
                 return
             
+            logger.info(f"Starting execution of job {job_id}")
             job.status = JobStatus.RUNNING
             job.updatedAt = datetime.utcnow()
             
             # Execute the task
+            logger.info(f"Calling task function for job {job_id}")
             result = await task_func(*args, **kwargs)
+            logger.info(f"Task function completed for job {job_id}, result type: {type(result).__name__}")
             
             # Mark as completed
             self.complete_job(job_id, result)

@@ -62,6 +62,13 @@ export function useJobPolling(
     try {
       const jobStatus = await fetchJobStatusRef.current(jobId)
 
+      console.log('[useJobPolling] Job status:', { 
+        jobId, 
+        status: jobStatus.status, 
+        progress: jobStatus.progress,
+        hasResult: !!jobStatus.result 
+      });
+
       setStatus(jobStatus.status)
       // Only update progress if we have new progress data
       if (jobStatus.progress) {
@@ -69,6 +76,7 @@ export function useJobPolling(
       }
 
       if (jobStatus.status === 'completed') {
+        console.log('[useJobPolling] Job completed!', { hasResult: !!jobStatus.result, result: jobStatus.result });
         setResult(jobStatus.result)
         setIsPolling(false)
         if (intervalRef.current) {
@@ -78,6 +86,7 @@ export function useJobPolling(
         // Only call onComplete once
         setHasNotified(prevHasNotified => {
           if (!prevHasNotified) {
+            console.log('[useJobPolling] Calling onComplete callback');
             onCompleteRef.current?.(jobStatus.result)
             return true
           }

@@ -47,6 +47,7 @@ export function ConceptsStep({
   const [isDialogActive, setIsDialogActive] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
   const hasInitialized = useRef(false);
+  const currentJobIdRef = useRef<string | null>(null);
   const [baseModelLoading, setBaseModelLoading] = useState(false);
   const [baseModelLoaded, setBaseModelLoaded] = useState(false);
 
@@ -61,6 +62,9 @@ export function ConceptsStep({
       enabled: !!jobId && processingState === 'generating',
       onComplete: (conceptResult: ConceptSuggestion) => {
         if (currentCluster) {
+          // Set progress to 100% before showing results
+          setDisplayProgress(100);
+          
           const newClusterConcepts = new Map(clusterConcepts);
           newClusterConcepts.set(currentCluster.clusterId, {
             clusterId: currentCluster.clusterId,
@@ -70,12 +74,14 @@ export function ConceptsStep({
           setClusterConcepts(newClusterConcepts);
           setProcessingState('complete');
           setJobId(null);
+          currentJobIdRef.current = null; // Clear job ref
         }
       },
       onError: (error) => {
         toast.error(`Failed to generate concepts: ${error}`);
         setProcessingState('idle');
         setJobId(null);
+        currentJobIdRef.current = null; // Clear job ref
       },
     }
   );
@@ -97,11 +103,12 @@ export function ConceptsStep({
 
   // Update display progress only when it increases (prevent flickering)
   useEffect(() => {
-    if (progress && progress.total > 0 && processingState === 'generating') {
+    // Only update progress if it's for the current active job
+    if (progress && progress.total > 0 && processingState === 'generating' && jobId && jobId === currentJobIdRef.current) {
       const actualProgress = Math.round((progress.current / progress.total) * 100);
       setDisplayProgress(prev => Math.max(prev, actualProgress));
     }
-  }, [progress, processingState]);
+  }, [progress, processingState, jobId]);
 
   // Reset display progress when starting new generation
   useEffect(() => {
@@ -110,9 +117,14 @@ export function ConceptsStep({
     }
   }, [processingState]);
 
-  // Sync concepts to parent component
+  // Sync concepts to parent component (using useRef to avoid infinite loops)
+  const onConceptsUpdateRef = useRef(onConceptsUpdate);
   useEffect(() => {
-    if (onConceptsUpdate && clusterConcepts.size > 0) {
+    onConceptsUpdateRef.current = onConceptsUpdate;
+  }, [onConceptsUpdate]);
+
+  useEffect(() => {
+    if (onConceptsUpdateRef.current && clusterConcepts.size > 0) {
       const conceptsRecord: Record<string, { concepts: Concept[]; confirmed: boolean }> = {};
       clusterConcepts.forEach((value, key) => {
         conceptsRecord[key.toString()] = {
@@ -120,19 +132,29 @@ export function ConceptsStep({
           confirmed: value.confirmed,
         };
       });
-      onConceptsUpdate(conceptsRecord);
+      onConceptsUpdateRef.current(conceptsRecord);
     }
-  }, [clusterConcepts, onConceptsUpdate]);
+  }, [clusterConcepts]);
 
   // Auto-generate concepts for current cluster if not already generated
   useEffect(() => {
+    console.log('[ConceptsStep useEffect] Triggered:', {
+      currentCluster: currentCluster?.clusterId,
+      hasInitialized: hasInitialized.current,
+      processingState,
+      baseModelLoaded
+    });
+    
     if (!currentCluster || hasInitialized.current || processingState !== 'idle') return;
     
     const existingConcepts = clusterConcepts.get(currentCluster.clusterId);
     if (existingConcepts) {
+      console.log('[ConceptsStep] Concepts already exist for cluster', currentCluster.clusterId);
       setProcessingState('complete');
       return;
     }
+
+    console.log('[ConceptsStep] Starting generation flow for cluster', currentCluster.clusterId);
 
     // Check if base model is loaded, load it if not
     const ensureBaseModelLoaded = async () => {
@@ -176,12 +198,15 @@ export function ConceptsStep({
     // Start generating concepts
     const startConceptGeneration = async () => {
       try {
+        console.log('[ConceptsStep] Starting concept generation for cluster:', currentCluster.clusterId);
         setProcessingState('generating');
         const response = await client.concepts.generateConcepts(
           databaseId,
           currentCluster.clusterId
         );
+        console.log('[ConceptsStep] Got jobId:', response.jobId);
         setJobId(response.jobId);
+        currentJobIdRef.current = response.jobId; // Track current job
         hasInitialized.current = true;
       } catch (error) {
         console.error('Error starting concept generation:', error);
@@ -191,12 +216,16 @@ export function ConceptsStep({
     };
 
     ensureBaseModelLoaded();
-  }, [currentCluster, clusterConcepts, databaseId, client, processingState, baseModelLoaded]);
+  }, [currentCluster, clusterConcepts, databaseId, client, processingState]);
+  // Note: baseModelLoaded intentionally NOT in deps to avoid double-triggering
 
   const handlePrevious = useCallback(() => {
     if (currentClusterIndex > 0) {
       setCurrentClusterIndex(currentClusterIndex - 1);
       setProcessingState('idle');
+      setDisplayProgress(0);
+      setJobId(null); // Clear old job ID
+      currentJobIdRef.current = null; // Clear job ref
       hasInitialized.current = false;
     }
   }, [currentClusterIndex]);
@@ -205,6 +234,9 @@ export function ConceptsStep({
     if (currentClusterIndex < clusteringResult.clusters.length - 1) {
       setCurrentClusterIndex(currentClusterIndex + 1);
       setProcessingState('idle');
+      setDisplayProgress(0);
+      setJobId(null); // Clear old job ID
+      currentJobIdRef.current = null; // Clear job ref
       hasInitialized.current = false;
     }
   }, [currentClusterIndex, clusteringResult.clusters.length]);
@@ -215,32 +247,21 @@ export function ConceptsStep({
     const concepts = clusterConcepts.get(currentCluster.clusterId);
     if (!concepts) return;
 
-    try {
-      await client.concepts.saveConcepts(
-        databaseId,
-        currentCluster.clusterId,
-        { concepts: concepts.concepts }
-      );
+    // Mark as confirmed (store in browser state only, no API call)
+    const updatedConcepts = new Map(clusterConcepts);
+    updatedConcepts.set(currentCluster.clusterId, {
+      ...concepts,
+      confirmed: true,
+    });
+    setClusterConcepts(updatedConcepts);
 
-      // Mark as confirmed
-      const updatedConcepts = new Map(clusterConcepts);
-      updatedConcepts.set(currentCluster.clusterId, {
-        ...concepts,
-        confirmed: true,
-      });
-      setClusterConcepts(updatedConcepts);
+    toast.success(`Concepts for ${currentCluster.name} confirmed`);
 
-      toast.success(`Concepts for ${currentCluster.name} confirmed`);
-
-      // Move to next cluster if available
-      if (currentClusterIndex < clusteringResult.clusters.length - 1) {
-        handleNext();
-      }
-    } catch (error) {
-      console.error('Error saving concepts:', error);
-      toast.error('Failed to save concepts');
+    // Move to next cluster if available
+    if (currentClusterIndex < clusteringResult.clusters.length - 1) {
+      handleNext();
     }
-  }, [currentCluster, clusterConcepts, databaseId, client, currentClusterIndex, clusteringResult.clusters.length, handleNext]);
+  }, [currentCluster, clusterConcepts, currentClusterIndex, clusteringResult.clusters.length, handleNext]);
 
   const handleSkipCluster = useCallback(() => {
     if (!currentCluster) return;

@@ -42,8 +42,9 @@ async def lifespan(app: FastAPI):
             concept_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best",
             relationship_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_relationships_with_concepts_20251102170240/best",
             attribute_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_attributes_20251029135113/best",
-            naming_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_naming/best",
-            gpu_memory_utilization=0.85,  # High since base model stays loaded, only adapters switch
+            naming_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best",
+            gpu_memory_utilization=0.75,  # Reduced to leave room for KV cache
+            max_model_len=8192,  # Limit context length to save memory
             tensor_parallel_size=1,
             auto_unload=False,  # Base model stays loaded, adapters are swapped
         )

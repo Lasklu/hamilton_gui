@@ -47,12 +47,16 @@ async def generate_concepts(
     - **database_id**: Database identifier
     - **clusters**: List of cluster information (from clustering step)
     """
+    logger.info(f"=== GENERATE_CONCEPTS CALLED: database_id={database_id}, clusters={[c.cluster_id for c in clusters]} ===")
+    
     # Create job
     job = job_manager.create_job(
         job_type=JobType.CONCEPTS,
         database_id=database_id,
         parameters={"cluster_count": len(clusters)}
     )
+    
+    logger.info(f"Created job {job.id} for {len(clusters)} clusters")
     
     # Start background task
     async def run_concept_generation():

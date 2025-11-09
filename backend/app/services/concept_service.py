@@ -133,39 +133,42 @@ class ConceptService:
                 for concept in existing_concepts
             ]
         
-        # Use context manager to automatically load/unload model
-        # This saves GPU memory by unloading the model after use
+        # Get adapter paths from settings (already imported at top)
+        concept_adapter_path = getattr(settings, 'CONCEPT_ADAPTER_PATH', None)
+        naming_adapter_path = getattr(settings, 'NAMING_ADAPTER_PATH', None)
+        
+        # Use context manager for ONE model (with LoRA adapter swapping support)
+        # The extract_concepts function will handle adapter swapping internally
         try:
-            with self.model_manager.use_model("concept") as concept_model:
+            with self.model_manager.use_model("concept") as model:
                 if progress_callback:
                     progress_callback(30, 100, "Extracting concepts...")
                 
                 # Import your concept extraction function
                 from evaluator.experimenter.solutions.hamilton.hamilton.distinct_methods.extract_concepts import extract_concepts_from_cluster
                 
-                # Load naming model as well (separate context for clarity)
-                with self.model_manager.use_model("naming") as naming_model:
-                    loop = asyncio.get_event_loop()
-                    
-                    ai_response = await loop.run_in_executor(
-                        None,
-                        extract_concepts_from_cluster,
-                        cluster_id,
-                        table_names,
-                        database_id,
-                        database,
-                        concept_model,
-                        None,
-                        None,
-                        False,
-                        existing_concepts_dict,
-                        naming_model,
-                        None,
-                        True,
-                        progress_callback,
-                        False,
-                        True,
-                    )
+                loop = asyncio.get_event_loop()
+                
+                ai_response = await loop.run_in_executor(
+                    None,
+                    extract_concepts_from_cluster,
+                    cluster_id,
+                    table_names,
+                    database_id,
+                    database,
+                    model,  # Single model instance
+                    None,   # model_path (not needed, model already loaded)
+                    concept_adapter_path,  # concept LoRA adapter
+                    False,  # use_fast_inference (model already loaded)
+                    existing_concepts_dict,
+                    None,   # naming_model (deprecated, use naming_adapter_path instead)
+                    None,   # naming_model_path (deprecated)
+                    naming_adapter_path,  # naming LoRA adapter
+                    True,   # naming_enabled
+                    progress_callback,
+                    False,  # use_table_names_only
+                    True,   # verbose
+                )
                 
                 logger.info(f"Concept extraction complete for cluster {cluster_id}")
                 
@@ -188,6 +191,9 @@ class ConceptService:
         
         if progress_callback:
             progress_callback(90, 100, f"Validated {len(concepts)} concepts...")
+        
+        # Small delay to ensure progress callbacks are flushed
+        await asyncio.sleep(0.1)
         
         return concepts
     
@@ -237,7 +243,7 @@ class ConceptService:
             
             # Create concept
             concept = Concept(
-                id=concept_data.get("id"),
+                id=concept_data.get("id") or f"concept_{cluster_id}_{len(concepts) + 1}",
                 name=concept_data.get("name"),
                 cluster_id=cluster_id,
                 id_attributes=id_attributes,

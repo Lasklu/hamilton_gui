@@ -117,15 +117,11 @@ class ModelManager:
     async def configure_models(
         self,
         base_model_path: Optional[str] = None,
-        base_adapter_path: Optional[str] = None,
-        concept_model_path: Optional[str] = None,
         concept_adapter_path: Optional[str] = None,
-        relationship_model_path: Optional[str] = None,
         relationship_adapter_path: Optional[str] = None,
-        attribute_model_path: Optional[str] = None,
         attribute_adapter_path: Optional[str] = None,
-        naming_model_path: Optional[str] = None,
         naming_adapter_path: Optional[str] = None,
+        base_adapter_path: Optional[str] = None,
         model_class = None,  # Your FastLocalModel class
         auto_unload: bool = False,  # Keep base model loaded
         **model_kwargs  # Additional kwargs for model initialization
@@ -134,19 +130,16 @@ class ModelManager:
         Configure models with a persistent base model and task-specific adapters.
         
         The base model is loaded once and kept in GPU memory. Task-specific LoRA
-        adapters are applied/swapped on top of the base model as needed.
+        adapters are registered with vLLM and can be switched dynamically without
+        reloading the base model.
         
         Args:
             base_model_path: Path to base model (kept in GPU memory)
-            base_adapter_path: Optional base adapter
-            concept_model_path: Optional separate model for concepts (if not using base + adapter)
             concept_adapter_path: LoRA adapter for concept extraction
-            relationship_model_path: Optional separate model for relationships
             relationship_adapter_path: LoRA adapter for relationship extraction
-            attribute_model_path: Optional separate model for attributes
             attribute_adapter_path: LoRA adapter for attribute extraction
-            naming_model_path: Optional separate model for naming
             naming_adapter_path: LoRA adapter for naming
+            base_adapter_path: Optional base adapter (rarely used)
             model_class: The FastLocalModel class (or your model class)
             auto_unload: If True, unload models after use (False = keep base loaded)
             **model_kwargs: Additional arguments passed to model constructor
@@ -164,132 +157,62 @@ class ModelManager:
                 logger.error("Could not import FastLocalModel. Pass model_class parameter.")
                 raise
         
-        # Store configuration for lazy loading
-        # Store configuration - include a base model slot which will be kept loaded
+        # Store configuration for the base model
+        # All adapters will be loaded into this one base model instance
         self._config = {
             "base": {
                 "model_path": base_model_path,
-                "adapter_path": base_adapter_path,
+                "adapter_path": base_adapter_path,  # Optional default adapter
                 "model_class": model_class,
-                **model_kwargs
-            },
-            "concept": {
-                "model_path": base_model_path,
-                "adapter_path": concept_adapter_path,
-                "model_class": model_class,
-                **model_kwargs
-            },
-            "relationship": {
-                "model_path": base_model_path,
-                "adapter_path": relationship_adapter_path,
-                "model_class": model_class,
-                **model_kwargs
-            },
-            "attribute": {
-                "model_path": base_model_path,
-                "adapter_path": attribute_adapter_path,
-                "model_class": model_class,
-                **model_kwargs
-            },
-            "naming": {
-                "model_path": base_model_path,
-                "adapter_path": naming_adapter_path,
-                "model_class": model_class,
+                "enable_lora": True,  # Enable LoRA support
+                "max_loras": 4,  # Support 4 concurrent adapters
                 **model_kwargs
             }
         }
         
+        # Store adapter paths for each task
+        # These will be loaded into the base model's vLLM engine
+        self._adapter_paths = {
+            "concept": concept_adapter_path,
+            "relationship": relationship_adapter_path,
+            "attribute": attribute_adapter_path,
+            "naming": naming_adapter_path,
+        }
+        
+        # Remove None values
+        self._adapter_paths = {k: v for k, v in self._adapter_paths.items() if v is not None}
+        
         # Store config in ModelInfo for later use
-        for model_name, config in self._config.items():
-            self._models[model_name].config = config
+        self._models["base"].config = self._config["base"]
         
         self._auto_unload = auto_unload
         self._initialized = True
         
-        logger.info("ModelManager configured")
+        logger.info("=" * 80)
+        logger.info("ModelManager configured with base model + adapter switching")
+        logger.info(f"Base model: {base_model_path}")
+        logger.info(f"Adapters to be loaded:")
+        for name, path in self._adapter_paths.items():
+            logger.info(f"  - {name}: {path}")
         logger.info(f"Auto-unload: {'enabled' if auto_unload else 'disabled (base model persistent)'}")
+        logger.info("=" * 80)
         
         # Don't load base model immediately - it will be loaded on first use
-        # This prevents blocking the API startup
-        base_cfg = self._config.get('base')
-        if base_cfg and base_cfg.get('model_path'):
-            logger.info("Base model will be loaded on first use (lazy loading)")
-            logger.info("This prevents blocking API startup")
-        """
-        Initialize models with background loading.
-        
-        Args:
-            concept_model_path: Path to concept extraction model
-            concept_adapter_path: Optional LoRA adapter for concept model
-            relationship_model_path: Path to relationship extraction model
-            relationship_adapter_path: Optional LoRA adapter for relationship model
-            attribute_model_path: Path to attribute extraction model
-            attribute_adapter_path: Optional LoRA adapter for attribute model
-            model_class: The FastLocalModel class (or your model class)
-            **model_kwargs: Additional arguments passed to model constructor
-        """
-        if self._initialized:
-            logger.warning("ModelManager already initialized, skipping")
-            return
-        
-        # Import FastLocalModel here to avoid circular imports
-        if model_class is None:
-            try:
-                # Try to import your FastLocalModel
-                # Adjust the import path based on where you place this class
-                from hamilton.pipeline.models.fast_local import FastLocalModel
-                model_class = FastLocalModel
-            except ImportError:
-                logger.error("Could not import FastLocalModel. Pass model_class parameter.")
-                raise
-        
-        # Store configuration
-        self._config = {
-            "concept": {
-                "model_path": concept_model_path,
-                "adapter_path": concept_adapter_path,
-                "model_class": model_class,
-                **model_kwargs
-            },
-            "relationship": {
-                "model_path": relationship_model_path,
-                "adapter_path": relationship_adapter_path,
-                "model_class": model_class,
-                **model_kwargs
-            },
-            "attribute": {
-                "model_path": attribute_model_path,
-                "adapter_path": attribute_adapter_path,
-                "model_class": model_class,
-                **model_kwargs
-            }
-        }
-        
-        # Start background loading for each model
-        logger.info("Starting background model loading...")
-        
-        if concept_model_path:
-            self._start_background_loading("concept")
-        
-        if relationship_model_path:
-            self._start_background_loading("relationship")
-        
-        if attribute_model_path:
-            self._start_background_loading("attribute")
-        
-        self._initialized = True
-        logger.info("ModelManager initialization started (models loading in background)")
+        logger.info("Base model will be loaded on first inference (lazy loading)")
+        logger.info("This prevents blocking API startup")
     
     def _load_model_sync(self, model_name: str):
         """
-        Load a model synchronously (used by context manager and lazy loading).
+        Load the base model synchronously and register all LoRA adapters.
+        
+        This should only be called for model_name='base'. Task-specific models
+        (concept, relationship, etc.) just switch adapters on the base model.
         
         Args:
-            model_name: Name of the model to load ("concept", "relationship", "attribute")
+            model_name: Should be "base" to load the base model with all adapters
         """
         with self._model_locks[model_name]:
             model_info = self._models[model_name]
-            print(model_info)
             
             # If already loaded and ready, just return
             if model_info.status == ModelStatus.READY and model_info.model is not None:
@@ -307,18 +230,25 @@ class ModelManager:
                 # If error occurred, fall through to reload
             
             try:
-                logger.info(f"[{model_name}] Loading model...")
+                logger.info(f"[{model_name}] Loading base model with vLLM...")
                 model_info.status = ModelStatus.LOADING
                 
                 config = model_info.config.copy()
                 model_class = config.pop("model_class")
                 config.pop("lazy_load", None)  # Remove if present
-                print(config)
-                # Create model instance with lazy_load=False to load immediately
+                
+                # Create base model instance with lazy_load=False to load immediately
+                logger.info(f"[{model_name}] Initializing vLLM engine...")
                 model = model_class(
                     lazy_load=False,
                     **config
                 )
+                
+                # Load all LoRA adapters into the base model
+                if hasattr(model, 'load_lora_adapters') and self._adapter_paths:
+                    logger.info(f"[{model_name}] Loading {len(self._adapter_paths)} LoRA adapters...")
+                    model.load_lora_adapters(self._adapter_paths)
+                    logger.info(f"[{model_name}] All adapters loaded successfully!")
                 
                 # Store the loaded model
                 model_info.model = model
@@ -326,10 +256,13 @@ class ModelManager:
                 model_info.last_used = time.time()
                 model_info.use_count += 1
                 
-                logger.info(f"[{model_name}] Model loaded successfully!")
+                logger.info("=" * 80)
+                logger.info(f"[{model_name}] Base model loaded successfully!")
+                logger.info(f"Available adapters: {list(self._adapter_paths.keys())}")
+                logger.info("=" * 80)
                 
             except Exception as e:
-                logger.error(f"[{model_name}] Failed to load model: {e}")
+                logger.error(f"[{model_name}] Failed to load model: {e}", exc_info=True)
                 model_info.status = ModelStatus.ERROR
                 model_info.error = str(e)
                 raise
@@ -371,23 +304,26 @@ class ModelManager:
     @contextmanager
     def use_model(self, model_name: str):
         """
-        Context manager for using a model with automatic loading/unloading.
+        Context manager for using a model with automatic adapter switching.
         
-        This is the RECOMMENDED way to use models when you have limited GPU memory.
-        The model is loaded when entering the context and unloaded when exiting.
+        This loads the base model on first use, then switches adapters as needed.
+        The base model stays loaded; only the lightweight adapter is switched.
         
         Args:
             model_name: "concept", "relationship", "attribute", or "naming"
             
         Yields:
-            The loaded model instance
+            The base model instance with the appropriate adapter active
             
         Example:
             model_mgr = get_model_manager()
             
             with model_mgr.use_model("concept") as model:
                 result = model.generate_modeling(prompt)
-            # Model is automatically unloaded here
+            
+            with model_mgr.use_model("relationship") as model:
+                result = model.generate_modeling(prompt)
+            # Base model stays loaded, only adapters switch
         """
         if model_name not in self._models:
             raise ValueError(f"Unknown model: {model_name}")
@@ -398,99 +334,63 @@ class ModelManager:
                 "Call configure_models() during app startup."
             )
         
-        model_info = self._models[model_name]
-        
-        # For non-base models we may only have an adapter; allow adapter-only configs
-        adapter_path = model_info.config.get("adapter_path")
-
-        # If a base model is configured we can try to apply adapter on top
+        # Get base model info
         base_info = self._models.get('base')
-
+        
+        if not base_info or not base_info.config.get('model_path'):
+            raise RuntimeError(
+                f"Base model not configured. Cannot use adapter for '{model_name}'."
+            )
+        
         try:
-            # If requesting the base model, just load it
-            if model_name == 'base':
-                self._load_model_sync('base')
-                model_info = self._models['base']
-                model_info.last_used = time.time()
-                model_info.use_count += 1
-                yield model_info.model
-                return
-
-            # Load base model if needed (first time use) - this is where the loading happens
-            if base_info and base_info.config.get('model_path') and base_info.status == ModelStatus.NOT_LOADED:
+            # Load base model if needed (first time use)
+            if base_info.status == ModelStatus.NOT_LOADED:
                 logger.info("=" * 80)
                 logger.info("First model inference - loading base model into GPU memory...")
                 logger.info("This may take 10-30 seconds...")
                 logger.info("=" * 80)
                 self._load_model_sync('base')
                 logger.info("Base model loaded successfully and ready for adapter switching")
-
-            # If base model exists and is ready and there is an adapter, try to apply adapter
-            if base_info and base_info.status == ModelStatus.READY and adapter_path:
+            
+            # If requesting the base model directly, just yield it
+            if model_name == 'base':
+                base_info.last_used = time.time()
+                base_info.use_count += 1
+                yield base_info.model
+                return
+            
+            # For task-specific models, switch to the appropriate adapter
+            if model_name in self._adapter_paths:
                 base_model = base_info.model
-
-                # Try common adapter-apply method names on the base model
-                apply_candidates = [
-                    'apply_adapter', 'load_adapter', 'add_adapter', 'merge_adapter',
-                    'load_lora', 'apply_lora'
-                ]
-                remove_candidates = [
-                    'remove_adapter', 'unload_adapter', 'detach_adapter', 'reset_adapter', 'clear_adapters'
-                ]
-
-                apply_fn = None
-                for name in apply_candidates:
-                    if hasattr(base_model, name):
-                        apply_fn = getattr(base_model, name)
-                        break
-
-                if apply_fn:
-                    logger.info(f"Applying adapter {adapter_path} to base model for '{model_name}'")
-                    # Call apply function and yield the base model
-                    try:
-                        apply_fn(adapter_path)
-                    except Exception as e:
-                        logger.error(f"Applying adapter failed: {e}")
-                        # Fall back to per-model load below
-                    else:
-                        # Use the base model as the model for this logical model
-                        model_info.model = base_model
-                        model_info.status = ModelStatus.READY
-                        model_info.last_used = time.time()
-                        model_info.use_count += 1
-                        try:
-                            yield base_model
-                        finally:
-                            # Try to remove adapter if possible but keep base loaded
-                            for rn in remove_candidates:
-                                if hasattr(base_model, rn):
-                                    try:
-                                        getattr(base_model, rn)()
-                                    except Exception:
-                                        logger.debug(f"Failed to remove adapter using {rn}")
-                            return
-
-            # Otherwise, load a separate model instance (adapter applied during instantiation)
-            # Ensure at least model_path or adapter_path exists
-            if not model_info.config.get("model_path") and not adapter_path:
+                
+                # Switch to the requested adapter
+                if hasattr(base_model, 'set_lora_adapter'):
+                    logger.debug(f"Switching to '{model_name}' adapter...")
+                    base_model.set_lora_adapter(model_name)
+                    
+                    # Update usage stats for this logical model
+                    model_info = self._models[model_name]
+                    model_info.last_used = time.time()
+                    model_info.use_count += 1
+                    model_info.status = ModelStatus.READY
+                    
+                    # Yield the base model (now with the correct adapter active)
+                    yield base_model
+                else:
+                    raise RuntimeError(
+                        f"Base model does not support adapter switching. "
+                        f"Ensure FastLocalModel has 'set_lora_adapter' method."
+                    )
+            else:
                 raise RuntimeError(
-                    f"Model {model_name} not configured. Provide {model_name}_model_path or {model_name}_adapter_path in configure_models()."
+                    f"No adapter configured for '{model_name}'. "
+                    f"Available adapters: {list(self._adapter_paths.keys())}"
                 )
-
-            # Load the model (this will create a separate instance if base can't be used)
-            self._load_model_sync(model_name)
-
-            # Update usage stats
-            model_info.last_used = time.time()
-            model_info.use_count += 1
-
-            # Yield the model for use
-            yield model_info.model
-
+        
         finally:
-            # Unload the model if auto_unload is enabled and it's not the persistent base
-            if self._auto_unload and model_name != 'base':
-                self._unload_model_sync(model_name)
+            # Never unload the base model - it stays loaded for adapter switching
+            # This is the key advantage of the adapter approach
+            pass
     
     async def get_or_load_model(self, model_name: str) -> Any:
         """

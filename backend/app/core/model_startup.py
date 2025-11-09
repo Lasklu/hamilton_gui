@@ -107,12 +107,11 @@ async def initialize_models_on_startup(
         tensor_parallel_size=tensor_parallel_size,
         max_model_len=max_model_len,
         auto_unload=auto_unload,
-        lazy_load=False,  # Base model loads immediately
     )
     
     logger.info("=" * 80)
     logger.info("Model manager configured successfully")
-    logger.info("Base model loaded and will stay in GPU memory")
+    logger.info("Base model will be loaded on first inference (lazy loading)")
     logger.info("Adapters will be swapped as needed for different tasks")
     logger.info("=" * 80)
 

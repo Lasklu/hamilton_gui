@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     POSTGRES_ADMIN_USER: str = "postgres"
     POSTGRES_ADMIN_PASSWORD: str = "postgres"
     POSTGRES_ADMIN_DATABASE: str = "postgres"
+    
+    # Model Configuration - LoRA Adapter Paths
+    CONCEPT_ADAPTER_PATH: str = "/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best"
+    NAMING_ADAPTER_PATH: str = "/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best"  # Update if you have a separate naming adapter
 
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]
