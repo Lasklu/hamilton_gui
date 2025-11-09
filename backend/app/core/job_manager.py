@@ -5,7 +5,11 @@ import uuid
 from datetime import datetime
 from typing import Dict, Optional, Any, Callable, Coroutine
 import asyncio
+import traceback
 from app.models.job import Job, JobStatus, JobType, JobProgress
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class JobManager:
@@ -110,8 +114,11 @@ class JobManager:
             self.complete_job(job_id, result)
             
         except Exception as e:
-            # Mark as failed
-            self.fail_job(job_id, str(e))
+            # Log full traceback for debugging
+            logger.exception(f"Job {job_id} failed with exception: {str(e)}")
+            # Mark as failed with full traceback
+            error_message = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+            self.fail_job(job_id, error_message)
     
     def start_job(
         self,

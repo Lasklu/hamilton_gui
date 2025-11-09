@@ -2,18 +2,63 @@
  * Concepts API service
  */
 import { axiosInstance } from '../client'
-import type { ConceptSuggestion, JobCreateResponse } from '@/lib/types'
+import type { ConceptSuggestion, JobCreateResponse, Concept, ClusterInfo } from '@/lib/types'
 
 export const conceptsApi = {
   /**
-   * Generate concept suggestions for a cluster
+   * Generate concepts for a single cluster (async job)
+   * This is a convenience method that calls the single cluster endpoint
    */
   async generateConcepts(
     databaseId: string,
     clusterId: number
   ): Promise<JobCreateResponse> {
+    // Get clustering result to find the cluster
+    const clusteringResponse = await axiosInstance.get(`/databases/${databaseId}/cluster/active`)
+    const clusteringResult = clusteringResponse.data
+    
+    const cluster = clusteringResult.clusters.find((c: ClusterInfo) => c.clusterId === clusterId)
+    if (!cluster) {
+      throw new Error(`Cluster ${clusterId} not found`)
+    }
+    
+    // Call the batch generation endpoint with just this cluster
     const response = await axiosInstance.post<JobCreateResponse>(
-      `/databases/${databaseId}/clusters/${clusterId}/concepts`
+      `/databases/${databaseId}/concepts/generate`,
+      [cluster]  // Send as array with single cluster (body expects List[ClusterInfo])
+    )
+    return response.data
+  },
+
+  /**
+   * Generate concepts for all clusters (async, incremental results)
+   */
+  async generateConceptsForAllClusters(
+    databaseId: string,
+    clusters: ClusterInfo[]
+  ): Promise<JobCreateResponse> {
+    const response = await axiosInstance.post<JobCreateResponse>(
+      `/databases/${databaseId}/concepts/generate`,
+      clusters
+    )
+    return response.data
+  },
+
+  /**
+   * Generate concepts for a single cluster (synchronous)
+   */
+  async generateConceptsForCluster(
+    databaseId: string,
+    clusterId: number,
+    tableNames: string[],
+    existingConcepts?: Concept[]
+  ): Promise<ConceptSuggestion> {
+    const response = await axiosInstance.post<ConceptSuggestion>(
+      `/databases/${databaseId}/concepts/cluster/${clusterId}`,
+      {
+        table_names: tableNames,
+        existing_concepts: existingConcepts || null
+      }
     )
     return response.data
   },

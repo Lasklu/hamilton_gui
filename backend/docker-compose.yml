@@ -1,0 +1,48 @@
+# docker-compose.yml
+name: pg16_app
+
+services:
+  db:
+    image: postgres:16
+    container_name: pg16_app_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: securepassword
+      POSTGRES_DB: appdb
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pg16_app_pgdata:/var/lib/postgresql/data
+      - ./initdb.d:/docker-entrypoint-initdb.d:ro
+    networks:
+      - pg16_app_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: pg16_app_pgadmin
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "127.0.0.1:5050:80"   # open http://127.0.0.1:5050
+    volumes:
+      - pg16_app_pgadmin:/var/lib/pgadmin
+    networks:
+      - pg16_app_net
+
+volumes:
+  pg16_app_pgdata:
+  pg16_app_pgadmin:
+
+networks:
+  pg16_app_net:

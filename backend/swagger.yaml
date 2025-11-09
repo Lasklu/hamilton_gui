@@ -38,7 +38,52 @@ paths:
     
     post:
       tags: [Databases]
+      summary: Create a new database
+      description: >
+        Create a new database on the configured PostgreSQL server.
+        Uses admin credentials from server configuration.
+        Optionally execute SQL script after creation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: 
+                  type: string
+                  description: Display name for the database
+                  example: "Sales Database"
+                database_name:
+                  type: string
+                  description: Name of the database in PostgreSQL (auto-generated if not provided)
+                  example: "sales_db"
+                sql_content:
+                  type: string
+                  description: Optional SQL script to execute after database creation
+                  example: "CREATE TABLE customers (id SERIAL PRIMARY KEY, name VARCHAR(255));"
+                create_if_not_exists:
+                  type: boolean
+                  default: true
+                  description: Create the database if it doesn't already exist
+      responses:
+        '201':
+          description: Database created successfully
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Database' }
+        '400':
+          description: Invalid payload or creation failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /databases/upload:
+    post:
+      tags: [Databases]
       summary: Upload database SQL script
+      description: Legacy endpoint for uploading SQL files. Creates a SQLite database by default.
       requestBody:
         required: true
         content:
@@ -52,10 +97,6 @@ paths:
                   type: string
                   format: binary
                   description: SQL script (DDL/DML)
-          text/plain:
-            schema:
-              type: string
-              description: Raw SQL script
       responses:
         '201':
           description: Database registered
@@ -68,37 +109,33 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
 
-  /databases/connect:
+  /databases/from-text:
     post:
       tags: [Databases]
-      summary: Connect to a database via connection string
-      description: >
-        Connect to an external database using a connection string.
-        Supports PostgreSQL, MySQL, and other common database formats.
+      summary: Create database from SQL text
+      description: Create a database from raw SQL text content
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               type: object
-              required: [name, connectionString]
+              required: [name, sql_content]
               properties:
                 name: 
                   type: string
-                  description: Human-readable name for the database
-                  example: "Production Database"
-                connectionString:
+                  description: Database name
+                sql_content:
                   type: string
-                  description: Database connection string
-                  example: "postgresql://user:password@localhost:5432/mydb"
+                  description: Raw SQL script
       responses:
         '201':
-          description: Database connected successfully
+          description: Database created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Database' }
         '400':
-          description: Invalid connection string or connection failed
+          description: Invalid payload
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -117,6 +154,24 @@ paths:
               schema: { $ref: '#/components/schemas/Database' }
         '404':
           description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    
+    delete:
+      tags: [Databases]
+      summary: Delete database metadata
+      description: >
+        Delete database metadata from the system.
+        Note: This does NOT drop the actual database on the PostgreSQL server,
+        it only removes the metadata entry.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '204':
+          description: Database metadata deleted successfully (no content)
+        '404':
+          description: Database not found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -566,6 +621,21 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Database' }
+    
+    delete:
+      tags: [Mock]
+      summary: "[MOCK] Delete database"
+      description: Mock endpoint that removes a database from mock storage.
+      parameters:
+        - $ref: '#/components/parameters/DatabaseId'
+      responses:
+        '204':
+          description: Mock database deleted successfully (no content)
+        '404':
+          description: Database not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
 
   /mock/databases/{databaseId}/schema:
     get:
@@ -722,9 +792,27 @@ components:
       type: object
       required: [id, name, createdAt]
       properties:
-        id: { type: string }
-        name: { type: string }
-        createdAt: { type: string, format: date-time }
+        id: 
+          type: string
+          description: Unique database identifier
+          example: "db_a1b2c3d4e5"
+        name: 
+          type: string
+          description: Display name for the database
+          example: "Sales Database"
+        createdAt: 
+          type: string
+          format: date-time
+          description: When the database was registered
+        tableCount:
+          type: integer
+          description: Number of tables in the database
+          example: 15
+        status:
+          type: string
+          enum: [pending, connected, failed, disconnected]
+          description: Connection status of the database
+          example: "connected"
 
     DatabaseSchema:
       type: object

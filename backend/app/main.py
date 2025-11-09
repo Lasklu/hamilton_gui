@@ -5,12 +5,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import os
 
 from app.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.core.exceptions import AppException
 from app.api.routes import api_router
 from app.models.common import ErrorResponse
+from app.db.session import init_db
 
 # Setup logging
 setup_logging(settings.log_level)
@@ -24,14 +26,47 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Log level: {settings.log_level}")
     
-    # TODO: Initialize database connections, load models, etc.
+    # Initialize metadata database
+    try:
+        init_db()
+        logger.info(f"Metadata database initialized at {settings.METADATA_DATABASE_URL}")
+    except Exception as e:
+        logger.error(f"Failed to initialize metadata database: {str(e)}")
+        raise
+    
+        # Initialize AI model manager
+    try:
+        from app.core.model_startup import initialize_models_on_startup
+        await initialize_models_on_startup(
+            base_model_path="Qwen/Qwen3-14B",
+            concept_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best",
+            relationship_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_relationships_with_concepts_20251102170240/best",
+            attribute_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_attributes_20251029135113/best",
+            naming_adapter_path="/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_naming/best",
+            gpu_memory_utilization=0.85,  # High since base model stays loaded, only adapters switch
+            tensor_parallel_size=1,
+            auto_unload=False,  # Base model stays loaded, adapters are swapped
+        )
+        logger.info("AI model manager configured successfully")
+    except Exception as e:
+        logger.error(f"Failed to configure AI models: {str(e)}", exc_info=True)
+        # Re-raise to prevent app startup with broken model config
+        raise
     
     yield
     
     # Shutdown
     logger.info("Shutting down application")
     
-    # TODO: Cleanup resources, close connections, etc.
+    # Cleanup AI models
+    try:
+        from app.core.model_startup import shutdown_models
+        await shutdown_models()
+        logger.info("AI models cleaned up")
+    except Exception as e:
+        logger.error(f"Error during model cleanup: {str(e)}")
+    
+    # TODO: Cleanup other resources, close connections, etc.
 
 
 # Create FastAPI application
@@ -103,6 +138,7 @@ app.include_router(api_router)
 
 # Run server directly with python -m app.main
 if __name__ == "__main__":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     uvicorn.run(
         "app.main:app",
         host=settings.host,

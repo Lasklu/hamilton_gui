@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -27,6 +28,7 @@ export function DatabaseUploadStep({ onSuccess, useMockApi = false }: DatabaseUp
   const [selectedDatabaseId, setSelectedDatabaseId] = useState<string>('')
   const [isUploading, setIsUploading] = useState(false)
   const [isLoadingDatabases, setIsLoadingDatabases] = useState(false)
+  const [isDeletingDatabase, setIsDeletingDatabase] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const client = useMockApi ? mockClient : apiClient
@@ -134,6 +136,35 @@ export function DatabaseUploadStep({ onSuccess, useMockApi = false }: DatabaseUp
 
     // Success! Move to next step with selected database
     onSuccess(selectedDatabaseId)
+  }
+
+  const handleDeleteDatabase = async (databaseId: string) => {
+    if (!confirm('Are you sure you want to delete this database? This action cannot be undone.')) {
+      return
+    }
+
+    setIsDeletingDatabase(databaseId)
+    setError(null)
+
+    try {
+      await client.databases.delete(databaseId)
+      
+      // Remove from list
+      setExistingDatabases(prev => prev.filter(db => db.id !== databaseId))
+      
+      // Clear selection if deleted database was selected
+      if (selectedDatabaseId === databaseId) {
+        setSelectedDatabaseId('')
+      }
+    } catch (err: any) {
+      console.error('Delete error:', err)
+      setError(
+        err.response?.data?.message ||
+          'Failed to delete database. Please try again.'
+      )
+    } finally {
+      setIsDeletingDatabase(null)
+    }
   }
 
   return (
@@ -495,36 +526,52 @@ export function DatabaseUploadStep({ onSuccess, useMockApi = false }: DatabaseUp
                 {/* Database List */}
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {existingDatabases.map((db) => (
-                    <label
+                    <div
                       key={db.id}
-                      className={`flex items-center p-4 border rounded-lg cursor-pointer transition-colors ${
+                      className={`flex items-center gap-3 p-4 border rounded-lg transition-colors ${
                         selectedDatabaseId === db.id
                           ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                           : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
                       }`}
                     >
-                      <input
-                        type="radio"
-                        name="database"
-                        value={db.id}
-                        checked={selectedDatabaseId === db.id}
-                        onChange={(e) => setSelectedDatabaseId(e.target.value)}
-                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
-                      />
-                      <div className="ml-3 flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {db.name}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {new Date(db.createdAt).toLocaleDateString()}
-                          </span>
+                      <label className="flex items-center flex-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="database"
+                          value={db.id}
+                          checked={selectedDatabaseId === db.id}
+                          onChange={(e) => setSelectedDatabaseId(e.target.value)}
+                          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                        />
+                        <div className="ml-3 flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              {db.name}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(db.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            ID: {db.id} • {db.tableCount || 0} tables
+                          </p>
                         </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          ID: {db.id}
-                        </p>
-                      </div>
-                    </label>
+                      </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDeleteDatabase(db.id)}
+                        disabled={isDeletingDatabase === db.id}
+                        className="flex-shrink-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/20"
+                      >
+                        {isDeletingDatabase === db.id ? (
+                          <Loading size="sm" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   ))}
                 </div>
 

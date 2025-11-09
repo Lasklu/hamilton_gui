@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
 import { Loading } from '@/components/ui/Loading';
 import { JobProgressIndicator } from '@/components/ui/JobProgressIndicator';
 import { TableClusterView } from '@/components/concepts/TableClusterView';
@@ -44,7 +45,10 @@ export function ConceptsStep({
   const [selectedTableForDialog, setSelectedTableForDialog] = useState<string | null>(null);
   const [selectedColumnForDialog, setSelectedColumnForDialog] = useState<string | null>(null);
   const [isDialogActive, setIsDialogActive] = useState(false);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const hasInitialized = useRef(false);
+  const [baseModelLoading, setBaseModelLoading] = useState(false);
+  const [baseModelLoaded, setBaseModelLoaded] = useState(false);
 
   const client = useMockApi ? mockClient : apiClient;
   const currentCluster = clusteringResult.clusters[currentClusterIndex];
@@ -91,6 +95,21 @@ export function ConceptsStep({
     fetchSchema();
   }, [databaseId, client]);
 
+  // Update display progress only when it increases (prevent flickering)
+  useEffect(() => {
+    if (progress && progress.total > 0 && processingState === 'generating') {
+      const actualProgress = Math.round((progress.current / progress.total) * 100);
+      setDisplayProgress(prev => Math.max(prev, actualProgress));
+    }
+  }, [progress, processingState]);
+
+  // Reset display progress when starting new generation
+  useEffect(() => {
+    if (processingState === 'idle') {
+      setDisplayProgress(0);
+    }
+  }, [processingState]);
+
   // Sync concepts to parent component
   useEffect(() => {
     if (onConceptsUpdate && clusterConcepts.size > 0) {
@@ -115,8 +134,47 @@ export function ConceptsStep({
       return;
     }
 
+    // Check if base model is loaded, load it if not
+    const ensureBaseModelLoaded = async () => {
+      if (baseModelLoaded) {
+        // Base model already loaded, proceed with concept generation
+        startConceptGeneration();
+        return;
+      }
+
+      try {
+        setBaseModelLoading(true);
+        const modelStatus = await client.models.getStatus();
+        
+        if (modelStatus.base === 'ready') {
+          // Base model already loaded
+          setBaseModelLoaded(true);
+          setBaseModelLoading(false);
+          startConceptGeneration();
+        } else {
+          // Load base model
+          toast.loading('Loading base model into GPU memory...', { id: 'base-model-loading' });
+          const loadResult = await client.models.loadBaseModel();
+          
+          if (loadResult.status === 'success' || loadResult.status === 'already_loaded') {
+            setBaseModelLoaded(true);
+            toast.success('Base model loaded successfully', { id: 'base-model-loading' });
+            startConceptGeneration();
+          } else {
+            throw new Error(loadResult.message);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading base model:', error);
+        toast.error('Failed to load base model', { id: 'base-model-loading' });
+        setProcessingState('idle');
+      } finally {
+        setBaseModelLoading(false);
+      }
+    };
+
     // Start generating concepts
-    const generateConcepts = async () => {
+    const startConceptGeneration = async () => {
       try {
         setProcessingState('generating');
         const response = await client.concepts.generateConcepts(
@@ -132,8 +190,8 @@ export function ConceptsStep({
       }
     };
 
-    generateConcepts();
-  }, [currentCluster, clusterConcepts, databaseId, client, processingState]);
+    ensureBaseModelLoaded();
+  }, [currentCluster, clusterConcepts, databaseId, client, processingState, baseModelLoaded]);
 
   const handlePrevious = useCallback(() => {
     if (currentClusterIndex > 0) {
@@ -256,8 +314,16 @@ export function ConceptsStep({
 
   if (!schema) {
     return (
-      <div className="h-screen flex items-center justify-center">
-        <Loading size="lg" />
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+        <div className="text-center max-w-md w-full px-8">
+          <Loader2 className="w-16 h-16 animate-spin text-primary-500 mx-auto mb-6" />
+          <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+            Loading schema...
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Fetching database schema information
+          </p>
+        </div>
       </div>
     );
   }
@@ -532,8 +598,24 @@ export function ConceptsStep({
           <div className="flex-1 flex flex-col overflow-hidden">
             {processingState === 'generating' ? (
               <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-                <div className="max-w-md w-full p-6">
-                  <JobProgressIndicator progress={progress} className="w-full" />
+                <div className="text-center max-w-md w-full px-8">
+                  <Loader2 className="w-12 h-12 animate-spin text-primary-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                    Generating concepts...
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    {progress?.message || 'Analyzing cluster structure'}
+                  </p>
+                  
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden shadow-inner">
+                    <div 
+                      className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${displayProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    {displayProgress}%
+                  </p>
                 </div>
               </div>
             ) : processingState === 'complete' && currentConcepts ? (
@@ -578,7 +660,12 @@ export function ConceptsStep({
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-800">
-                <Loading size="lg" />
+                <div className="text-center max-w-md w-full px-8">
+                  <Loader2 className="w-12 h-12 animate-spin text-primary-500 mx-auto mb-4" />
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Loading...
+                  </p>
+                </div>
               </div>
             )}
           </div>

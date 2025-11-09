@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     port: int = 8000
     reload: bool = True
     log_level: str = "info"
+    
+    # Debug mode
+    DEBUG: bool = False
 
     # Application Configuration
     app_name: str = "Ontology Learning API"
@@ -22,6 +25,16 @@ class Settings(BaseSettings):
         "Endpoints compatible with Hamilton parsers (parse_concept, parse_mapping). "
         "Sampling behavior: samples=1 → single result form, samples>1 → probabilistic lists."
     )
+    
+    # Database Configuration
+    METADATA_DATABASE_URL: str = "sqlite:///./hamilton_metadata.db"
+    
+    # PostgreSQL Admin Configuration (for creating new databases)
+    POSTGRES_ADMIN_HOST: str = "localhost"
+    POSTGRES_ADMIN_PORT: int = 5432
+    POSTGRES_ADMIN_USER: str = "postgres"
+    POSTGRES_ADMIN_PASSWORD: str = "postgres"
+    POSTGRES_ADMIN_DATABASE: str = "postgres"
 
     # CORS
     cors_origins: List[str] = ["http://localhost:3000"]

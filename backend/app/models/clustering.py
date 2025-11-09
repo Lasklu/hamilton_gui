@@ -71,3 +71,13 @@ class ClusteringResult(BaseModel):
     class Config:
         populate_by_name = True
 
+
+class SaveClusteringRequest(BaseModel):
+    """Request model for saving a clustering."""
+
+    name: str = Field(..., description="User-friendly name for this clustering")
+    clustering: ClusteringResult = Field(..., description="The clustering result to save")
+
+    class Config:
+        populate_by_name = True
+

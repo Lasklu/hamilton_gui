@@ -1,12 +1,17 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { TableClusterView } from '@/components/concepts/TableClusterView'
 import { AttributeSuggestionView } from '@/components/attributes/AttributeSuggestionView'
 import { apiClient, mockClient } from '@/lib/api/services'
+import { useJobPolling } from '@/hooks/useJobPolling'
 import type { ClusteringResult, Concept, Attribute, DatabaseSchema } from '@/lib/types'
+
+interface AttributeSuggestion {
+  attributes: Attribute[]
+}
 
 interface AttributesStepProps {
   databaseId: string
@@ -15,6 +20,8 @@ interface AttributesStepProps {
   useMockApi?: boolean
   onComplete: () => void
 }
+
+type ProcessingState = 'idle' | 'generating' | 'complete'
 
 export function AttributesStep({
   databaseId,
@@ -34,9 +41,36 @@ export function AttributesStep({
   } | null>(null)
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
   const [highlightedTables, setHighlightedTables] = useState<string[]>([])
+  const [processingState, setProcessingState] = useState<ProcessingState>('idle')
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [displayProgress, setDisplayProgress] = useState(0)
 
   const client = useMockApi ? mockClient : apiClient
   const hasInitialized = useRef(false)
+
+  // Poll job status for attribute generation
+  const { progress, result, error: jobError } = useJobPolling(
+    (id) => client.jobs.getStatus(id),
+    {
+      jobId,
+      enabled: !!jobId && processingState === 'generating',
+      onComplete: (attributeResult: AttributeSuggestion) => {
+        if (currentConcept) {
+          setAttributes(prev => ({
+            ...prev,
+            [currentConcept.id]: attributeResult.attributes
+          }))
+          setProcessingState('complete')
+          setJobId(null)
+        }
+      },
+      onError: (error) => {
+        toast.error(`Failed to generate attributes: ${error}`)
+        setProcessingState('idle')
+        setJobId(null)
+      },
+    }
+  )
 
   // Fetch schema
   useEffect(() => {
@@ -52,6 +86,21 @@ export function AttributesStep({
 
     fetchSchema()
   }, [databaseId, client])
+
+  // Update display progress only when it increases (prevent flickering)
+  useEffect(() => {
+    if (progress && progress.total > 0 && processingState === 'generating') {
+      const actualProgress = Math.round((progress.current / progress.total) * 100)
+      setDisplayProgress(prev => Math.max(prev, actualProgress))
+    }
+  }, [progress, processingState])
+
+  // Reset display progress when starting new generation
+  useEffect(() => {
+    if (processingState === 'idle') {
+      setDisplayProgress(0)
+    }
+  }, [processingState])
 
   // Get all concepts from all clusters
   const allConcepts = Object.values(initialConcepts)
@@ -109,60 +158,39 @@ export function AttributesStep({
         setExpandedClusters(new Set([relevantClusters[0]]))
       }
       hasInitialized.current = false
+      setProcessingState('idle')
     }
   }, [currentConceptIndex])
 
-  // Load attributes for current concept
+  // Auto-generate attributes for current concept if not already generated
   useEffect(() => {
-    if (currentConcept && !hasInitialized.current) {
-      hasInitialized.current = true
-      loadAttributes(currentConcept.id)
+    if (!currentConcept || hasInitialized.current || processingState !== 'idle') return
+    
+    const existingAttributes = attributes[currentConcept.id]
+    if (existingAttributes) {
+      setProcessingState('complete')
+      return
     }
-  }, [currentConcept])
 
-  const loadAttributes = async (conceptId: string) => {
-    // Check if already loaded
-    if (attributes[conceptId]) return
+    // Start generating attributes
+    const generateAttributes = async () => {
+      try {
+        setProcessingState('generating')
+        const response = await client.attributes.generateAttributes(
+          databaseId,
+          currentConcept.id
+        )
+        setJobId(response.jobId)
+        hasInitialized.current = true
+      } catch (error) {
+        console.error('Error starting attribute generation:', error)
+        toast.error('Failed to start attribute generation')
+        setProcessingState('idle')
+      }
+    }
 
-    // TODO: Replace with actual API call
-    // For now, generate mock attributes from concept's idAttributes
-    const concept = allConcepts.find(c => c.id === conceptId)
-    
-    // Generate attributes from idAttributes
-    const mockAttributes: Attribute[] = []
-    if (concept?.idAttributes && concept.idAttributes.length > 0) {
-      concept.idAttributes.forEach((idAttr, idx) => {
-        idAttr.attributes?.forEach((attr) => {
-          mockAttributes.push({
-            id: `attr-${conceptId}-${mockAttributes.length}`,
-            name: attr.column.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            column: attr.column,
-            table: attr.table,
-            dataType: 'VARCHAR',
-            isRequired: true // ID attributes are typically required
-          })
-        })
-      })
-    }
-    
-    // Add some additional mock attributes
-    if (mockAttributes.length < 3 && concept) {
-      const baseTable = concept.idAttributes?.[0]?.attributes?.[0]?.table || 'table1'
-      mockAttributes.push({
-        id: `attr-${conceptId}-${mockAttributes.length}`,
-        name: 'Sample Attribute',
-        column: 'sample_column',
-        table: baseTable,
-        dataType: 'VARCHAR',
-        isRequired: false
-      })
-    }
-    
-    setAttributes(prev => ({
-      ...prev,
-      [conceptId]: mockAttributes
-    }))
-  }
+    generateAttributes()
+  }, [currentConcept, attributes, databaseId, client, processingState])
 
   const handleConceptConfirm = (conceptId: string) => {
     setConfirmedConcepts(prev => new Set([...prev, conceptId]))
@@ -383,7 +411,29 @@ export function AttributesStep({
 
         {/* Right side: Attributes view */}
         <div className="w-1/2 flex flex-col overflow-hidden">
-          {schema && (
+          {processingState === 'generating' ? (
+            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
+              <div className="text-center max-w-md w-full px-8">
+                <Loader2 className="w-12 h-12 animate-spin text-primary-500 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                  Generating attributes...
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  {progress?.message || 'Analyzing concept structure'}
+                </p>
+                
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden shadow-inner">
+                  <div 
+                    className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${displayProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  {displayProgress}%
+                </p>
+              </div>
+            </div>
+          ) : schema && currentAttributes.length > 0 ? (
             <AttributeSuggestionView
               concept={currentConcept}
               attributes={currentAttributes}
@@ -404,6 +454,12 @@ export function AttributesStep({
               onTableHighlight={handleTableHighlight}
               onColumnClick={handleColumnClickForDialog}
             />
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Loading...
+              </p>
+            </div>
           )}
         </div>
       </div>

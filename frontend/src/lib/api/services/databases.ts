@@ -62,4 +62,11 @@ export const databasesApi = {
     )
     return response.data
   },
+
+  /**
+   * Delete a database
+   */
+  async delete(databaseId: string): Promise<void> {
+    await axiosInstance.delete(`/databases/${databaseId}`)
+  },
 }

@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
 import { Loading } from '@/components/ui/Loading';
 import { JobProgressIndicator } from '@/components/ui/JobProgressIndicator';
 import { apiClient, mockClient } from '@/lib/api/services';
 import { useJobPolling } from '@/hooks/useJobPolling';
 import type { Database, ClusteringResult, ClusterInfo } from '@/lib/types';
+import type { ClusteringSummary } from '@/lib/api/services/clustering';
 import dynamic from 'next/dynamic';
 
 // Dynamically import the graph component (client-side only)
@@ -215,7 +217,10 @@ export function DatabaseClusteringStep({
   const [error, setError] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [displayProgress, setDisplayProgress] = useState(0);
   const hasInitialized = useRef(false);
+  const [savedClusterings, setSavedClusterings] = useState<ClusteringSummary[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
 
   const client = useMockApi ? mockClient : apiClient;
 
@@ -266,7 +271,15 @@ export function DatabaseClusteringStep({
       const dbData = await client.databases.get(databaseId);
       setDatabase(dbData);
 
-      // Step 2: Start clustering job
+      // Step 2: Load list of saved clusterings
+      try {
+        const saved = await client.clustering.listSavedClusterings(databaseId);
+        setSavedClusterings(saved);
+      } catch (err) {
+        console.warn('Failed to load saved clusterings:', err);
+      }
+
+      // Step 3: Start clustering job
       setLoadingStage('clustering');
       const jobResponse = await client.clustering.cluster(databaseId);
       setJobId(jobResponse.jobId);
@@ -280,9 +293,70 @@ export function DatabaseClusteringStep({
     }
   }, [databaseId, client]);
 
+  // Load a saved clustering
+  const loadSavedClustering = useCallback(async (clusteringId: number) => {
+    console.log('Loading saved clustering:', clusteringId, 'Current stage:', loadingStage, 'JobId:', jobId);
+    
+    try {
+      setIsLoadingSaved(true);
+      
+      // Cancel running job if any - do this FIRST to stop polling
+      if (jobId && loadingStage === 'clustering') {
+        console.log('Cancelling running job:', jobId);
+        // Stop polling by clearing jobId and changing stage immediately
+        setJobId(null);
+        setLoadingStage('complete');
+        toast('Cancelled clustering job', { icon: 'ℹ️' });
+      }
+
+      // Small delay to ensure polling stops
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log('Fetching saved clustering from API...');
+      const savedClustering = await client.clustering.getSavedClustering(databaseId, clusteringId);
+      console.log('Loaded saved clustering:', savedClustering);
+      
+      setClusteringResult(savedClustering);
+      setModifiedClusters(savedClustering.clusters);
+      setLoadingStage('complete');
+      setHasChanges(false);
+      toast.success('Loaded saved clustering');
+    } catch (err) {
+      console.error('Failed to load saved clustering:', err);
+      toast.error('Failed to load saved clustering');
+    } finally {
+      setIsLoadingSaved(false);
+    }
+  }, [databaseId, client, jobId, loadingStage]);
+
+  // Refresh saved clusterings list
+  const refreshSavedClusterings = useCallback(async () => {
+    try {
+      const saved = await client.clustering.listSavedClusterings(databaseId);
+      setSavedClusterings(saved);
+    } catch (err) {
+      console.warn('Failed to refresh saved clusterings:', err);
+    }
+  }, [databaseId, client]);
+
   useEffect(() => {
     initializeDatabase();
   }, [initializeDatabase]);
+
+  // Update display progress only when it increases (prevent flickering)
+  useEffect(() => {
+    if (progress && progress.total > 0 && loadingStage === 'clustering') {
+      const actualProgress = Math.round((progress.current / progress.total) * 100);
+      setDisplayProgress(prev => Math.max(prev, actualProgress));
+    }
+  }, [progress, loadingStage]);
+
+  // Reset display progress when starting new clustering
+  useEffect(() => {
+    if (loadingStage === 'creating') {
+      setDisplayProgress(0);
+    }
+  }, [loadingStage]);
 
   const toggleCluster = (clusterId: number) => {
     setExpandedClusters((prev) => {
@@ -367,7 +441,9 @@ export function DatabaseClusteringStep({
 
   const handleSaveSuccess = useCallback(() => {
     setHasChanges(false);
-  }, []);  const getLoadingMessage = () => {
+    // Refresh the list of saved clusterings
+    refreshSavedClusterings();
+  }, [refreshSavedClusterings]);  const getLoadingMessage = () => {
     switch (loadingStage) {
       case 'creating':
         return 'Creating database and analyzing schema...';
@@ -397,14 +473,53 @@ export function DatabaseClusteringStep({
 
   if (loadingStage === 'creating' || loadingStage === 'clustering') {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <div className="max-w-md w-full p-8 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800">
-          <div className="flex flex-col items-center justify-center space-y-6">
-            <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
-              {loadingStage === 'creating' ? 'Loading Database' : 'Analyzing Database Structure'}
-            </p>
-            <JobProgressIndicator progress={progress} className="w-full" />
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+        <div className="text-center max-w-md w-full px-8">
+          <Loader2 className="w-16 h-16 animate-spin text-primary-500 mx-auto mb-6" />
+          <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
+            {loadingStage === 'creating' ? 'Loading Database' : 'Analyzing Database Structure'}
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+            {progress?.message || getLoadingMessage()}
+          </p>
+          
+          {/* Progress bar */}
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden shadow-inner">
+            <div 
+              className="h-full bg-gradient-to-r from-primary-500 to-primary-600 rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${displayProgress}%` }}
+            />
           </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            {displayProgress}%
+          </p>
+
+          {/* Saved clusterings dropdown */}
+          {savedClusterings.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                Or load a saved clustering:
+              </p>
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    loadSavedClustering(parseInt(e.target.value));
+                  }
+                }}
+                disabled={isLoadingSaved}
+                className="w-full px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">Select a saved clustering...</option>
+                {savedClusterings.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.clusterCount} clusters) - {new Date(c.createdAt).toLocaleDateString()}
+                    {c.isActive ? ' ✓' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -473,6 +588,32 @@ export function DatabaseClusteringStep({
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
               Expand clusters and drag tables to reorganize
             </p>
+
+            {/* Saved clusterings dropdown in edit view */}
+            {savedClusterings.length > 0 && (
+              <div className="mt-4">
+                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                  Load Saved Clustering
+                </label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      loadSavedClustering(parseInt(e.target.value));
+                    }
+                  }}
+                  disabled={isLoadingSaved}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select...</option>
+                  {savedClusterings.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.clusterCount}) {c.isActive ? '✓' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">

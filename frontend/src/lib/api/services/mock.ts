@@ -7,8 +7,13 @@ import type {
   JobCreateResponse,
   JobStatusResponse,
   ConceptSuggestion,
-  Relationship
+  Relationship,
+  Attribute
 } from '@/lib/types'
+
+export interface AttributeSuggestion {
+  attributes: Attribute[]
+}
 
 /**
  * Mock API endpoints for testing without backend logic.
@@ -79,6 +84,13 @@ export const mockApi = {
       )
       return response.data
     },
+
+    /**
+     * Delete a database (mock)
+     */
+    async delete(databaseId: string): Promise<void> {
+      await axiosInstance.delete(`/mock/databases/${databaseId}`)
+    },
   },
 
   clustering: {
@@ -101,13 +113,50 @@ export const mockApi = {
      */
     async saveClustering(
       databaseId: string,
-      clustering: ClusteringResult
-    ): Promise<{ success: boolean; message: string; clustering: ClusteringResult }> {
-      const response = await axiosInstance.put(
-        `/mock/databases/${databaseId}/cluster`,
-        clustering
-      )
-      return response.data
+      clustering: ClusteringResult,
+      name: string
+    ): Promise<{ success: boolean; message: string; clusteringId: number }> {
+      // Mock implementation - just return success
+      return {
+        success: true,
+        message: 'Clustering saved successfully (mock)',
+        clusteringId: Math.floor(Math.random() * 1000)
+      };
+    },
+
+    /**
+     * List saved clusterings (mock)
+     */
+    async listSavedClusterings(databaseId: string): Promise<any[]> {
+      // Mock implementation - return empty array
+      return [];
+    },
+
+    /**
+     * Get saved clustering (mock)
+     */
+    async getSavedClustering(databaseId: string, clusteringId: number): Promise<ClusteringResult> {
+      // Mock implementation - throw error since we don't have saved data
+      throw new Error('Mock mode: No saved clusterings available');
+    },
+
+    /**
+     * Get active clustering (mock)
+     */
+    async getActiveClustering(databaseId: string): Promise<ClusteringResult | null> {
+      // Mock implementation - return null
+      return null;
+    },
+
+    /**
+     * Activate clustering (mock)
+     */
+    async activateClustering(databaseId: string, clusteringId: number): Promise<{ success: boolean; message: string }> {
+      // Mock implementation
+      return {
+        success: true,
+        message: 'Clustering activated (mock)'
+      };
     },
   },
 
@@ -180,6 +229,72 @@ export const mockApi = {
         `/mock/databases/${databaseId}/relationships/confirm`,
         { relationships }
       )
+    },
+  },
+
+  attributes: {
+    /**
+     * Generate attributes for a concept (mock)
+     */
+    async generateAttributes(databaseId: string, conceptId: string): Promise<JobCreateResponse> {
+      const response = await axiosInstance.post<JobCreateResponse>(
+        `/mock/databases/${databaseId}/concepts/${conceptId}/attributes`
+      )
+      return response.data
+    },
+
+    /**
+     * Save attributes (mock)
+     */
+    async saveAttributes(
+      databaseId: string,
+      conceptId: string,
+      attributes: AttributeSuggestion
+    ): Promise<{ message: string }> {
+      const response = await axiosInstance.post<{ message: string }>(
+        `/mock/databases/${databaseId}/concepts/${conceptId}/attributes/save`,
+        attributes
+      )
+      return response.data
+    },
+
+    /**
+     * Get attributes (mock)
+     */
+    async getAttributes(
+      databaseId: string,
+      conceptId: string
+    ): Promise<AttributeSuggestion> {
+      const response = await axiosInstance.get<AttributeSuggestion>(
+        `/mock/databases/${databaseId}/concepts/${conceptId}/attributes`
+      )
+      return response.data
+    },
+  },
+
+  models: {
+    /**
+     * Get model status (mock)
+     */
+    async getStatus(): Promise<{ base?: string; concept?: string; relationship?: string; attribute?: string; naming?: string }> {
+      return {
+        base: 'ready',
+        concept: 'not_loaded',
+        relationship: 'not_loaded',
+        attribute: 'not_loaded',
+        naming: 'not_loaded',
+      }
+    },
+
+    /**
+     * Load base model (mock)
+     */
+    async loadBaseModel(): Promise<{ status: string; message: string; model_status: string }> {
+      return {
+        status: 'already_loaded',
+        message: 'Base model is already loaded (mock)',
+        model_status: 'ready',
+      }
     },
   },
 }

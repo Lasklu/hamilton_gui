@@ -29,11 +29,26 @@ interface Transform {
 }
 
 interface DragNode {
-  nodeId: string
-  startX: number
-  startY: number
+  conceptId: string
   offsetX: number
   offsetY: number
+}
+
+// Get color based on confidence level
+function getConfidenceColor(confidence?: number): { stroke: string; fill: string; label: string } {
+  if (confidence === undefined) {
+    return { stroke: '#9ca3af', fill: '#6b7280', label: 'gray' } // Gray for unknown
+  }
+  
+  if (confidence >= 0.9) {
+    return { stroke: '#10b981', fill: '#059669', label: 'green' } // High confidence - Green
+  } else if (confidence >= 0.75) {
+    return { stroke: '#3b82f6', fill: '#2563eb', label: 'blue' } // Good confidence - Blue
+  } else if (confidence >= 0.6) {
+    return { stroke: '#f59e0b', fill: '#d97706', label: 'amber' } // Medium confidence - Amber
+  } else {
+    return { stroke: '#ef4444', fill: '#dc2626', label: 'red' } // Low confidence - Red
+  }
 }
 
 export function RelationshipGraphView({
@@ -122,7 +137,7 @@ export function RelationshipGraphView({
       // Dragging a node
       const svgCoords = screenToSvg(e.clientX, e.clientY)
       const newPositions = new Map(nodePositions)
-      newPositions.set(dragNode.nodeId, {
+      newPositions.set(dragNode.conceptId, {
         x: svgCoords.x,
         y: svgCoords.y,
       })
@@ -211,9 +226,7 @@ export function RelationshipGraphView({
       if (pos) {
         const svgCoords = screenToSvg(e.clientX, e.clientY)
         setDragNode({
-          nodeId: conceptId,
-          startX: pos.x,
-          startY: pos.y,
+          conceptId: conceptId,
           offsetX: pos.x - svgCoords.x,
           offsetY: pos.y - svgCoords.y,
         })
@@ -233,6 +246,29 @@ export function RelationshipGraphView({
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
+      {/* Confidence Legend */}
+      <div className="absolute top-4 right-4 z-20 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3">
+        <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Confidence</h4>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-0.5 bg-green-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400">High (≥90%)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-0.5 bg-blue-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400">Good (75-89%)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-0.5 bg-amber-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400">Medium (60-74%)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-0.5 bg-red-500"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400">Low (&lt;60%)</span>
+          </div>
+        </div>
+      </div>
+
       {/* Zoom Controls */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
         <button
@@ -308,6 +344,8 @@ export function RelationshipGraphView({
           const endX = toPos.x - nodeRadius * Math.cos(angle)
           const endY = toPos.y - nodeRadius * Math.sin(angle)
 
+          const colors = getConfidenceColor(rel.confidence)
+
           return (
             <g key={rel.id}>
               {/* Arrow marker */}
@@ -322,7 +360,7 @@ export function RelationshipGraphView({
                 >
                   <path
                     d="M 0 0 L 12 6 L 0 12 z"
-                    fill="#b20138"
+                    fill={colors.fill}
                     className="transition-colors"
                   />
                 </marker>
@@ -334,11 +372,11 @@ export function RelationshipGraphView({
                 y1={startY}
                 x2={endX}
                 y2={endY}
-                stroke="#d1004a"
+                stroke={colors.stroke}
                 strokeWidth="3"
-                strokeOpacity="0.7"
+                strokeOpacity="0.8"
                 markerEnd={`url(#arrowhead-${rel.id})`}
-                className="hover:stroke-primary-600 hover:stroke-opacity-100 cursor-pointer transition-all"
+                className="hover:stroke-opacity-100 cursor-pointer transition-all"
                 onClick={(e) => {
                   e.stopPropagation()
                   if (confirm('Delete this relationship?')) {
@@ -357,7 +395,7 @@ export function RelationshipGraphView({
                     height="24"
                     rx="12"
                     fill="white"
-                    stroke="#b20138"
+                    stroke={colors.stroke}
                     strokeWidth="2"
                     filter="url(#nodeShadow)"
                   />
@@ -366,7 +404,7 @@ export function RelationshipGraphView({
                     y={(fromPos.y + toPos.y) / 2 + 5}
                     textAnchor="middle"
                     fontSize="13"
-                    fill="#b20138"
+                    fill={colors.fill}
                     fontWeight="700"
                   >
                     {Math.round(rel.confidence * 100)}%
@@ -408,7 +446,7 @@ export function RelationshipGraphView({
 
           const isHovered = hoveredConcept === concept.id
           const isDragging = dragLine?.fromConceptId === concept.id
-          const isBeingMoved = dragNode?.nodeId === concept.id
+          const isBeingMoved = dragNode?.conceptId === concept.id
           const radius = isHovered || isDragging || isBeingMoved ? 52 : 48
 
           return (

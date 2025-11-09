@@ -472,9 +472,18 @@ export default function ClusteringGraph({
       clusters: updatedClusters,
     };
 
+    // Prompt user for a name
+    const name = window.prompt('Enter a name for this clustering:', 'Clustering ' + new Date().toLocaleString());
+    
+    // If user cancelled, don't save
+    if (name === null) return;
+    
+    // If empty name, use a default
+    const clusteringName = name.trim() || 'Unnamed Clustering';
+
     try {
-      // Call the API to save the clustering
-      const result = await client.clustering.saveClustering(databaseId, updatedResult);
+      // Call the API to save the clustering with the name
+      const result = await client.clustering.saveClustering(databaseId, updatedResult, clusteringName);
       
       // Show success toast
       toast.success(result.message || 'Clustering saved successfully!');

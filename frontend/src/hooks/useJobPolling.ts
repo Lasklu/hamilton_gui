@@ -28,7 +28,7 @@ export function useJobPolling(
     jobId,
     onComplete,
     onError,
-    pollingInterval = 1000,
+    pollingInterval = 5000,
     enabled = true,
   } = options
 
@@ -42,6 +42,13 @@ export function useJobPolling(
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const onCompleteRef = useRef(onComplete)
   const onErrorRef = useRef(onError)
+  const fetchJobStatusRef = useRef(fetchJobStatus)
+
+  // keep fetchJobStatus stable inside a ref so the hook doesn't restart
+  // polling whenever the parent re-creates the function
+  useEffect(() => {
+    fetchJobStatusRef.current = fetchJobStatus
+  }, [fetchJobStatus])
 
   // Keep refs updated
   useEffect(() => {
@@ -53,7 +60,7 @@ export function useJobPolling(
     if (!jobId || !enabled) return
 
     try {
-      const jobStatus = await fetchJobStatus(jobId)
+      const jobStatus = await fetchJobStatusRef.current(jobId)
 
       setStatus(jobStatus.status)
       // Only update progress if we have new progress data
@@ -109,7 +116,7 @@ export function useJobPolling(
         return prevHasNotified
       })
     }
-  }, [jobId, enabled, fetchJobStatus])
+  }, [jobId, enabled])
 
   useEffect(() => {
     if (!jobId || !enabled) {
@@ -132,8 +139,13 @@ export function useJobPolling(
     // Poll immediately
     poll()
 
-    // Then poll at interval
-    intervalRef.current = setInterval(poll, pollingInterval)
+    // Then poll at interval. Enforce a sensible minimum to avoid accidental
+    // very-small values from callers (or NaN) causing tight loops.
+    const effectiveInterval = Number.isFinite(pollingInterval)
+      ? Math.max(250, pollingInterval)
+      : 5000
+
+    intervalRef.current = setInterval(poll, effectiveInterval)
 
     // Cleanup
     return () => {

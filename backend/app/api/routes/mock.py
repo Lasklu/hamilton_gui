@@ -352,6 +352,29 @@ async def mock_get_database_schema(database_id: str) -> DatabaseSchema:
     )
 
 
+@router.delete(
+    "/databases/{database_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        404: {"model": ErrorResponse, "description": "Database not found"},
+    },
+    summary="[MOCK] Delete database",
+    description="Mock endpoint that removes a database from the mock storage.",
+)
+async def mock_delete_database(database_id: str) -> None:
+    """
+    Mock database deletion endpoint.
+    Removes the database from mock storage.
+    """
+    if database_id not in MOCK_DATABASES:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Database {database_id} not found"
+        )
+    
+    del MOCK_DATABASES[database_id]
+
+
 @router.post(
     "/databases/{database_id}/cluster",
     status_code=status.HTTP_202_ACCEPTED,
@@ -1045,6 +1068,7 @@ async def mock_suggest_relationships(database_id: str) -> list[Relationship]:
     # and suggest relationships based on foreign keys, naming patterns, etc.
     
     mock_relationships = [
+        # High confidence (>= 0.9) - Green
         Relationship(
             id="rel_1",
             fromConceptId="concept_1_users",
@@ -1059,6 +1083,7 @@ async def mock_suggest_relationships(database_id: str) -> list[Relationship]:
             name="contains",
             confidence=0.92
         ),
+        # Good confidence (0.75-0.89) - Blue
         Relationship(
             id="rel_3",
             fromConceptId="concept_1_users",
@@ -1071,14 +1096,44 @@ async def mock_suggest_relationships(database_id: str) -> list[Relationship]:
             fromConceptId="concept_4_products",
             toConceptId="concept_2_product_categories",
             name="belongs_to",
-            confidence=0.90
+            confidence=0.82
         ),
         Relationship(
             id="rel_5",
             fromConceptId="concept_15_warehouses",
             toConceptId="concept_7_product_inventory_management",
             name="stores",
-            confidence=0.87
+            confidence=0.77
+        ),
+        # Medium confidence (0.6-0.74) - Amber/Orange
+        Relationship(
+            id="rel_6",
+            fromConceptId="concept_4_products",
+            toConceptId="concept_15_warehouses",
+            name="stored_in",
+            confidence=0.68
+        ),
+        Relationship(
+            id="rel_7",
+            fromConceptId="concept_2_product_categories",
+            toConceptId="concept_4_products",
+            name="contains",
+            confidence=0.72
+        ),
+        # Low confidence (< 0.6) - Red
+        Relationship(
+            id="rel_8",
+            fromConceptId="concept_6_product_reviews",
+            toConceptId="concept_4_products",
+            name="reviews",
+            confidence=0.55
+        ),
+        Relationship(
+            id="rel_9",
+            fromConceptId="concept_7_product_inventory_management",
+            toConceptId="concept_4_products",
+            name="tracks",
+            confidence=0.48
         ),
     ]
     
@@ -1104,4 +1159,3 @@ async def mock_confirm_relationships(
         "databaseId": database_id,
         "relationshipCount": len(request.relationships)
     }
-

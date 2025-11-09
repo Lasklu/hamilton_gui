@@ -1,7 +1,7 @@
 """API route modules."""
 
 from fastapi import APIRouter
-from app.api.routes import databases, clustering, ontology, jobs, mock
+from app.api.routes import databases, clustering, ontology, jobs, mock, concepts, models
 
 # Create main API router
 api_router = APIRouter()
@@ -16,6 +16,16 @@ api_router.include_router(
 api_router.include_router(
     clustering.router,
     tags=["Clustering"],
+)
+
+api_router.include_router(
+    concepts.router,
+    tags=["Concepts"],
+)
+
+api_router.include_router(
+    models.router,
+    tags=["Models"],
 )
 
 api_router.include_router(
