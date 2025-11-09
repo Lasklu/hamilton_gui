@@ -507,7 +507,10 @@ export function ConceptSuggestionView({
                     className="flex items-center gap-2 bg-purple-50 dark:bg-purple-900/20 rounded-md px-2 py-1 border border-purple-200 dark:border-purple-800 group"
                   >
                     <code className="flex-1 text-xs font-mono text-purple-800 dark:text-purple-200">
-                      {condition}
+                      {typeof condition === 'string' 
+                        ? condition 
+                        : `${condition.table}.${condition.column} ${condition.operator} ${condition.value}`
+                      }
                     </code>
                     <button
                       onClick={() => handleRemoveCondition(concept.id, idx)}

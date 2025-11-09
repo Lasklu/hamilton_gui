@@ -72,9 +72,15 @@ export function AttributesStep({
     
     // Add clusters from conditions
     concept.conditions?.forEach(condition => {
-      const match = condition.match(/(\w+)\./)
-      if (match) {
-        const clusterId = findClusterByTable(match[1])
+      if (typeof condition === 'string') {
+        const match = condition.match(/(\w+)\./)
+        if (match) {
+          const clusterId = findClusterByTable(match[1])
+          if (clusterId !== null) clusterIds.add(clusterId)
+        }
+      } else {
+        // ConceptCondition object
+        const clusterId = findClusterByTable(condition.table)
         if (clusterId !== null) clusterIds.add(clusterId)
       }
     })

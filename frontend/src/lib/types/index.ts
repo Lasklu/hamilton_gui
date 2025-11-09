@@ -95,6 +95,13 @@ export interface ConceptIDAttribute {
   attributes: ConceptAttribute[]
 }
 
+export interface ConceptCondition {
+  table: string
+  column: string
+  operator: string
+  value: string
+}
+
 export interface Concept {
   id: string
   name?: string
@@ -103,7 +110,7 @@ export interface Concept {
   attributes?: ConceptAttribute[]
   confidence?: number
   subConcepts?: Concept[]
-  conditions?: string[]
+  conditions?: ConceptCondition[] | string[]  // Support both formats for backward compatibility
   joins?: string[]
 }
 

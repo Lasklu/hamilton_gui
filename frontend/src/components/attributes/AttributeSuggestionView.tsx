@@ -324,7 +324,10 @@ export function AttributeSuggestionView({
             <div className="space-y-1">
               {concept.conditions.map((condition, idx) => (
                 <p key={idx} className="text-xs font-mono text-gray-600 dark:text-gray-400">
-                  {condition}
+                  {typeof condition === 'string' 
+                    ? condition 
+                    : `${condition.table}.${condition.column} ${condition.operator} ${condition.value}`
+                  }
                 </p>
               ))}
             </div>

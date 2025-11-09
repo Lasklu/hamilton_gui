@@ -13,7 +13,7 @@ from app.models.clustering import (
     ClusteringResult,
     ClusterInfo,
 )
-from app.models.concept import Concept, ConceptSuggestion, ConceptAttribute, ConceptIDAttribute
+from app.models.concept import Concept, ConceptSuggestion, ConceptAttribute, ConceptIDAttribute, ConceptCondition
 from app.models.relationship import Relationship, RelationshipConfirmRequest
 from app.models.common import ErrorResponse, TableRef
 from app.models.job import JobType, JobCreateResponse, JobStatus
@@ -863,7 +863,20 @@ async def mock_generate_concepts(
                 conditions = None
                 joins = None
                 if len(concepts) == 0:
-                    conditions = [f"{table_name}.status = 'active'", f"{table_name}.deleted_at IS NULL"]
+                    conditions = [
+                        ConceptCondition(
+                            table=table_name,
+                            column="status",
+                            operator="=",
+                            value="active"
+                        ),
+                        ConceptCondition(
+                            table=table_name,
+                            column="deleted_at",
+                            operator="IS",
+                            value="NULL"
+                        )
+                    ]
                     # Find a related table for join
                     fk_columns = [col for col in table.columns if col.is_foreign_key]
                     if fk_columns:

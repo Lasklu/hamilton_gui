@@ -78,7 +78,7 @@ export function ConceptOverview({ allConcepts, className = '' }: ConceptOverview
                             {concept.name || concept.id}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {concept.idAttributes.length > 0 && (
+                            {concept.idAttributes && concept.idAttributes.length > 0 && concept.idAttributes[0].attributes && (
                               <div className="flex flex-wrap gap-1">
                                 {concept.idAttributes[0].attributes.map((attr, idx) => (
                                   <span key={idx} className="font-mono">
