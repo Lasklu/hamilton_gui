@@ -34,16 +34,34 @@ interface Connection {
   toColumn: string;
 }
 
+interface ExternalTable {
+  name: string;
+  connectedToTables: string[]; // Which cluster tables reference this external table
+  position: 'top' | 'bottom' | 'left' | 'right';
+  x: number;
+  y: number;
+}
+
 const TABLE_WIDTH = 280;
 const TABLE_ROW_HEIGHT = 28;
 const TABLE_HEADER_HEIGHT = 45;
 const TABLE_SPACING = 60;
+const EXTERNAL_BOX_WIDTH = 180;
+const EXTERNAL_BOX_HEIGHT = 60;
+const EXTERNAL_SPACING = 20;
 
 export function TableClusterView({ cluster, schema, highlightedTables = [], className = '', onTableClick, onColumnClick, clickableTables = false, clickableColumns = false }: TableClusterViewProps) {
   const [tables, setTables] = useState<TableNode[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [externalTables, setExternalTables] = useState<ExternalTable[]>([]);
   const [hoveredTable, setHoveredTable] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<{table: string, column: string} | null>(null);
+
+  // Helper function for table height
+  const getTableHeight = (tableOrColumns: TableNode | { columns: any[] }) => {
+    const columns = 'columns' in tableOrColumns ? tableOrColumns.columns : [];
+    return TABLE_HEADER_HEIGHT + columns.length * TABLE_ROW_HEIGHT + 10;
+  };
 
   useEffect(() => {
     // Filter tables that belong to this cluster
@@ -53,13 +71,14 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
     const tablesPerRow = Math.min(2, clusterTables.length);
     const tableNodes: TableNode[] = [];
     const tableConnections: Connection[] = [];
+    const externalRelationships = new Map<string, Set<string>>(); // external table -> cluster tables that reference it
 
     clusterTables.forEach((table, index) => {
       const row = Math.floor(index / tablesPerRow);
       const col = index % tablesPerRow;
       
-      const x = 50 + col * (TABLE_WIDTH + TABLE_SPACING);
-      const y = 50 + row * (TABLE_ROW_HEIGHT * 8 + TABLE_SPACING);
+      const x = 150 + col * (TABLE_WIDTH + TABLE_SPACING);
+      const y = 150 + row * (TABLE_ROW_HEIGHT * 8 + TABLE_SPACING);
 
       tableNodes.push({
         name: table.name,
@@ -72,25 +91,88 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
       table.columns.forEach((column) => {
         if (column.isForeignKey && column.foreignKeyReference) {
           const [targetTable, targetColumn] = column.foreignKeyReference.split('.');
+          
           if (cluster.tables.includes(targetTable)) {
+            // Internal connection (within cluster)
             tableConnections.push({
               from: table.name,
               to: targetTable,
               fromColumn: column.name,
               toColumn: targetColumn || 'id',
             });
+          } else {
+            // External connection (to table outside cluster)
+            if (!externalRelationships.has(targetTable)) {
+              externalRelationships.set(targetTable, new Set());
+            }
+            externalRelationships.get(targetTable)!.add(table.name);
           }
         }
       });
     });
 
+    // Position external tables around the borders
+    const external: ExternalTable[] = [];
+    const externalTableNames = Array.from(externalRelationships.keys());
+    
+    // Calculate cluster bounds
+    const minX = Math.min(...tableNodes.map(t => t.x));
+    const maxX = Math.max(...tableNodes.map(t => t.x + TABLE_WIDTH));
+    const minY = Math.min(...tableNodes.map(t => t.y));
+    const maxY = Math.max(...tableNodes.map(t => t.y + getTableHeight(t)));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    // Distribute external tables around borders
+    externalTableNames.forEach((extTable, index) => {
+      const connectedTables = Array.from(externalRelationships.get(extTable)!);
+      const totalExternal = externalTableNames.length;
+      
+      // Determine position based on index
+      let position: 'top' | 'bottom' | 'left' | 'right';
+      let x: number;
+      let y: number;
+      
+      const sideIndex = index % 4;
+      const itemsPerSide = Math.ceil(totalExternal / 4);
+      const positionInSide = Math.floor(index / 4);
+      
+      switch(sideIndex) {
+        case 0: // Top
+          position = 'top';
+          x = minX + positionInSide * (EXTERNAL_BOX_WIDTH + EXTERNAL_SPACING);
+          y = minY - 100;
+          break;
+        case 1: // Right
+          position = 'right';
+          x = maxX + 50;
+          y = minY + positionInSide * (EXTERNAL_BOX_HEIGHT + EXTERNAL_SPACING);
+          break;
+        case 2: // Bottom
+          position = 'bottom';
+          x = minX + positionInSide * (EXTERNAL_BOX_WIDTH + EXTERNAL_SPACING);
+          y = maxY + 50;
+          break;
+        default: // Left
+          position = 'left';
+          x = minX - EXTERNAL_BOX_WIDTH - 50;
+          y = minY + positionInSide * (EXTERNAL_BOX_HEIGHT + EXTERNAL_SPACING);
+          break;
+      }
+      
+      external.push({
+        name: extTable,
+        connectedToTables: connectedTables,
+        position,
+        x,
+        y,
+      });
+    });
+
     setTables(tableNodes);
     setConnections(tableConnections);
+    setExternalTables(external);
   }, [cluster, schema]);
-
-  const getTableHeight = (table: TableNode) => {
-    return TABLE_HEADER_HEIGHT + table.columns.length * TABLE_ROW_HEIGHT + 10;
-  };
 
   const getConnectionPath = (conn: Connection): string => {
     const fromTable = tables.find(t => t.name === conn.from);
@@ -111,8 +193,56 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
     return `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
   };
 
-  const maxX = Math.max(...tables.map(t => t.x + TABLE_WIDTH)) + 50;
-  const maxY = Math.max(...tables.map(t => t.y + getTableHeight(t))) + 50;
+  const getExternalConnectionPath = (externalTable: ExternalTable, clusterTableName: string): string => {
+    const clusterTable = tables.find(t => t.name === clusterTableName);
+    if (!clusterTable) return '';
+
+    const tableHeight = getTableHeight(clusterTable);
+    const tableCenterX = clusterTable.x + TABLE_WIDTH / 2;
+    const tableCenterY = clusterTable.y + tableHeight / 2;
+    
+    const extCenterX = externalTable.x + EXTERNAL_BOX_WIDTH / 2;
+    const extCenterY = externalTable.y + EXTERNAL_BOX_HEIGHT / 2;
+
+    // Determine connection point based on relative positions
+    let fromX, fromY, toX, toY;
+    
+    if (externalTable.position === 'top') {
+      fromX = tableCenterX;
+      fromY = clusterTable.y;
+      toX = extCenterX;
+      toY = extCenterY + EXTERNAL_BOX_HEIGHT / 2;
+    } else if (externalTable.position === 'bottom') {
+      fromX = tableCenterX;
+      fromY = clusterTable.y + tableHeight;
+      toX = extCenterX;
+      toY = extCenterY - EXTERNAL_BOX_HEIGHT / 2;
+    } else if (externalTable.position === 'left') {
+      fromX = clusterTable.x;
+      fromY = tableCenterY;
+      toX = extCenterX + EXTERNAL_BOX_WIDTH / 2;
+      toY = extCenterY;
+    } else { // right
+      fromX = clusterTable.x + TABLE_WIDTH;
+      fromY = tableCenterY;
+      toX = extCenterX - EXTERNAL_BOX_WIDTH / 2;
+      toY = extCenterY;
+    }
+
+    // Simple straight line or curved for better visibility
+    const midX = (fromX + toX) / 2;
+    const midY = (fromY + toY) / 2;
+    return `M ${fromX} ${fromY} Q ${midX} ${midY}, ${toX} ${toY}`;
+  };
+
+  const maxX = Math.max(
+    ...tables.map(t => t.x + TABLE_WIDTH),
+    ...externalTables.map(e => e.x + EXTERNAL_BOX_WIDTH)
+  ) + 50;
+  const maxY = Math.max(
+    ...tables.map(t => t.y + getTableHeight(t)),
+    ...externalTables.map(e => e.y + EXTERNAL_BOX_HEIGHT)
+  ) + 50;
 
   return (
     <div className={`relative bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden ${className}`}>
@@ -121,17 +251,41 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
         viewBox={`0 0 ${maxX || 800} ${maxY || 600}`}
         preserveAspectRatio="xMidYMid meet"
       >
-        {/* Draw connections */}
+        {/* Draw external connections first (under everything) */}
+        <g className="external-connections">
+          {externalTables.map((extTable) => 
+            extTable.connectedToTables.map((clusterTableName, idx) => (
+              <path
+                key={`${extTable.name}-${clusterTableName}-${idx}`}
+                d={getExternalConnectionPath(extTable, clusterTableName)}
+                stroke="#9ca3af"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                fill="none"
+                opacity="0.4"
+              />
+            ))
+          )}
+        </g>
+
+        {/* Draw internal connections */}
         <g className="connections">
           {connections.map((conn, idx) => (
             <g key={idx}>
+              {/* White outline for better visibility */}
+              <path
+                d={getConnectionPath(conn)}
+                stroke="#ffffff"
+                strokeWidth="5"
+                fill="none"
+              />
+              {/* Main connection line - solid blue */}
               <path
                 d={getConnectionPath(conn)}
                 stroke="#3b82f6"
-                strokeWidth="2"
+                strokeWidth="3"
                 fill="none"
                 markerEnd="url(#arrowhead)"
-                opacity="0.6"
               />
             </g>
           ))}
@@ -141,17 +295,62 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
         <defs>
           <marker
             id="arrowhead"
-            markerWidth="10"
-            markerHeight="10"
-            refX="9"
-            refY="3"
+            markerWidth="12"
+            markerHeight="12"
+            refX="11"
+            refY="6"
             orient="auto"
           >
-            <polygon points="0 0, 10 3, 0 6" fill="#3b82f6" />
+            <polygon points="0 0, 12 6, 0 12" fill="#3b82f6" />
           </marker>
         </defs>
 
-        {/* Draw tables */}
+        {/* Draw external table boxes */}
+        <g className="external-tables">
+          {externalTables.map((extTable) => (
+            <g
+              key={extTable.name}
+              transform={`translate(${extTable.x}, ${extTable.y})`}
+            >
+              {/* External table box */}
+              <rect
+                width={EXTERNAL_BOX_WIDTH}
+                height={EXTERNAL_BOX_HEIGHT}
+                rx="6"
+                ry="6"
+                fill="#f9fafb"
+                stroke="#9ca3af"
+                strokeWidth="2"
+                strokeDasharray="4,4"
+                opacity="0.9"
+              />
+              
+              {/* Table name */}
+              <text
+                x={EXTERNAL_BOX_WIDTH / 2}
+                y={EXTERNAL_BOX_HEIGHT / 2}
+                textAnchor="middle"
+                className="text-sm font-semibold"
+                fill="#6b7280"
+              >
+                {extTable.name.length > 18 ? extTable.name.substring(0, 18) + '...' : extTable.name}
+              </text>
+              
+              {/* External indicator */}
+              <text
+                x={EXTERNAL_BOX_WIDTH / 2}
+                y={EXTERNAL_BOX_HEIGHT / 2 + 18}
+                textAnchor="middle"
+                className="text-xs"
+                fill="#9ca3af"
+              >
+                (external)
+              </text>
+            </g>
+          ))}
+        </g>
+
+        {/* Draw cluster tables */}
         <g className="tables">
           {tables.map((table) => {
             const tableHeight = getTableHeight(table);
@@ -323,6 +522,21 @@ export function TableClusterView({ cluster, schema, highlightedTables = [], clas
           <div className="flex items-center gap-2">
             <span>🔗</span>
             <span>Foreign Key</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <svg width="16" height="12" viewBox="0 0 16 12">
+              <path d="M 2 6 L 14 6" stroke="#3b82f6" strokeWidth="2" fill="none" markerEnd="url(#legend-arrow)" />
+              <defs>
+                <marker id="legend-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <polygon points="0 0, 6 3, 0 6" fill="#3b82f6" />
+                </marker>
+              </defs>
+            </svg>
+            <span>Internal FK</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-0.5 border-t-2 border-dashed border-gray-400"></div>
+            <span>External Ref</span>
           </div>
         </div>
       </div>

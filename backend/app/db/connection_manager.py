@@ -129,15 +129,22 @@ class DatabaseConnectionManager:
                 col_name = column['name']
                 col_type = str(column['type'])
                 
+                # Build foreignKeyReference string in "table.column" format
+                fk_ref = None
+                if col_name in fk_lookup:
+                    ref_table = fk_lookup[col_name].get('table')
+                    ref_column = fk_lookup[col_name].get('column')
+                    if ref_table and ref_column:
+                        fk_ref = f"{ref_table}.{ref_column}"
+                
                 columns.append({
                     'name': col_name,
                     'dataType': col_type,
                     'isPrimaryKey': col_name in primary_keys.get('constrained_columns', []),
                     'isForeignKey': col_name in fk_lookup,
+                    'foreignKeyReference': fk_ref,
                     'isNullable': column.get('nullable', True),
-                    'defaultValue': column.get('default'),
-                    'referencedTable': fk_lookup.get(col_name, {}).get('table'),
-                    'referencedColumn': fk_lookup.get(col_name, {}).get('column')
+                    'defaultValue': column.get('default')
                 })
             
             tables.append({
