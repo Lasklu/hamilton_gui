@@ -19,6 +19,18 @@ class JobManager:
         self._jobs: Dict[str, Job] = {}
         self._tasks: Dict[str, asyncio.Task] = {}
     
+    def get_active_jobs(self, job_type: Optional[JobType] = None, database_id: Optional[str] = None) -> list[Job]:
+        """Get all active (pending or running) jobs, optionally filtered by type and database"""
+        active_jobs = []
+        for job in self._jobs.values():
+            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+                if job_type and job.type != job_type:
+                    continue
+                if database_id and job.databaseId != database_id:
+                    continue
+                active_jobs.append(job)
+        return active_jobs
+    
     def create_job(self, job_type: JobType, database_id: str, parameters: Optional[Dict[str, Any]] = None) -> Job:
         """Create a new job"""
         job_id = f"job_{uuid.uuid4().hex[:12]}"
@@ -46,6 +58,13 @@ class JobManager:
         if job:
             logger.debug(f"get_job({job_id}): status={job.status}, progress={job.progress}")
         return job
+
+    def find_active_job(self, job_type: JobType, database_id: str) -> Optional[Job]:
+        """Find an active (running) job for the given type and database."""
+        for job in self._jobs.values():
+            if job.type == job_type and job.databaseId == database_id and job.status == JobStatus.RUNNING:
+                return job
+        return None
     
     def update_progress(self, job_id: str, current: int, total: int, message: Optional[str] = None):
         """Update job progress"""

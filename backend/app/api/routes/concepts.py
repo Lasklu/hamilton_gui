@@ -49,6 +49,12 @@ async def generate_concepts(
     """
     logger.info(f"=== GENERATE_CONCEPTS CALLED: database_id={database_id}, clusters={[c.cluster_id for c in clusters]} ===")
     
+    # Check if there's already an active concept generation job for this database
+    active_job = job_manager.find_active_job(job_type=JobType.CONCEPTS, database_id=database_id)
+    if active_job:
+        logger.warning(f"Concept generation already in progress for database {database_id}, returning existing job: {active_job.id}")
+        return JobCreateResponse(jobId=active_job.id)
+    
     # Create job
     job = job_manager.create_job(
         job_type=JobType.CONCEPTS,

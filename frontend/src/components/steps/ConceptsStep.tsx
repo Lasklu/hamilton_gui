@@ -106,9 +106,17 @@ export function ConceptsStep({
     // Only update progress if it's for the current active job
     if (progress && progress.total > 0 && processingState === 'generating' && jobId && jobId === currentJobIdRef.current) {
       const actualProgress = Math.round((progress.current / progress.total) * 100);
-      setDisplayProgress(prev => Math.max(prev, actualProgress));
+      // Set to the actual progress reported by the job (allow decreases when new job starts)
+      setDisplayProgress(actualProgress);
     }
   }, [progress, processingState, jobId]);
+
+  // Reset display progress whenever a new job is started
+  useEffect(() => {
+    if (jobId) {
+      setDisplayProgress(0);
+    }
+  }, [jobId]);
 
   // Reset display progress when starting new generation
   useEffect(() => {
@@ -197,21 +205,34 @@ export function ConceptsStep({
 
     // Start generating concepts
     const startConceptGeneration = async () => {
+      // Immediately mark as initialized to prevent duplicate calls
+      hasInitialized.current = true;
+
       try {
         console.log('[ConceptsStep] Starting concept generation for cluster:', currentCluster.clusterId);
+        // Ensure the visible progress bar is reset before the job starts
+        setDisplayProgress(0);
         setProcessingState('generating');
         const response = await client.concepts.generateConcepts(
           databaseId,
-          currentCluster.clusterId
+          currentCluster.clusterId,
+          currentCluster  // Pass cluster info to avoid extra API call
         );
         console.log('[ConceptsStep] Got jobId:', response.jobId);
+
+        // Check if this is the same job we're already tracking
+        if (currentJobIdRef.current && currentJobIdRef.current === response.jobId) {
+          console.log('[ConceptsStep] Already tracking this job, skipping duplicate');
+          return;
+        }
+
         setJobId(response.jobId);
         currentJobIdRef.current = response.jobId; // Track current job
-        hasInitialized.current = true;
       } catch (error) {
         console.error('Error starting concept generation:', error);
         toast.error('Failed to start concept generation');
         setProcessingState('idle');
+        hasInitialized.current = false; // Reset on error so it can retry
       }
     };
 

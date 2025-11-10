@@ -11,15 +11,20 @@ export const conceptsApi = {
    */
   async generateConcepts(
     databaseId: string,
-    clusterId: number
+    clusterId: number,
+    clusterInfo?: ClusterInfo  // Optional: provide cluster info to avoid extra API call
   ): Promise<JobCreateResponse> {
-    // Get clustering result to find the cluster
-    const clusteringResponse = await axiosInstance.get(`/databases/${databaseId}/cluster/active`)
-    const clusteringResult = clusteringResponse.data
+    let cluster: ClusterInfo | undefined = clusterInfo;
     
-    const cluster = clusteringResult.clusters.find((c: ClusterInfo) => c.clusterId === clusterId)
+    // Only fetch clustering result if cluster info not provided
     if (!cluster) {
-      throw new Error(`Cluster ${clusterId} not found`)
+      const clusteringResponse = await axiosInstance.get(`/databases/${databaseId}/cluster/active`)
+      const clusteringResult = clusteringResponse.data
+      
+      cluster = clusteringResult.clusters.find((c: ClusterInfo) => c.clusterId === clusterId)
+      if (!cluster) {
+        throw new Error(`Cluster ${clusterId} not found`)
+      }
     }
     
     // Call the batch generation endpoint with just this cluster
