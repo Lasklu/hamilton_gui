@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { TableClusterView } from '@/components/concepts/TableClusterView'
 import { AttributeSuggestionView } from '@/components/attributes/AttributeSuggestionView'
 import { apiClient, mockClient } from '@/lib/api/services'
-import { useJobPolling } from '@/hooks/useJobPolling'
+import { useJobPollingWithProgress } from '@/hooks/useJobPollingWithProgress'
 import type { ClusteringResult, Concept, Attribute, DatabaseSchema } from '@/lib/types'
 
 interface AttributeSuggestion {
@@ -43,7 +43,6 @@ export function AttributesStep({
   const [highlightedTables, setHighlightedTables] = useState<string[]>([])
   const [processingState, setProcessingState] = useState<ProcessingState>('idle')
   const [jobId, setJobId] = useState<string | null>(null)
-  const [displayProgress, setDisplayProgress] = useState(0)
 
   const client = useMockApi ? mockClient : apiClient
   const hasInitialized = useRef(false)
@@ -51,13 +50,12 @@ export function AttributesStep({
 
   console.log('[AttributesStep] initialConcepts:', initialConcepts)
 
-  // Poll job status for attribute generation
-  const { progress, result, error: jobError } = useJobPolling(
-    (id) => client.jobs.getStatus(id),
-    {
-      jobId,
-      enabled: !!jobId && processingState === 'generating',
-      onComplete: (attributeResult: any) => {
+  // Poll job status for attribute generation with progress tracking
+  const { displayProgress, progressMessage } = useJobPollingWithProgress<any>({
+    client,
+    jobId,
+    enabled: !!jobId && processingState === 'generating',
+    onComplete: (attributeResult: any) => {
         console.log('[AttributesStep] onComplete called:', {
           jobId,
           currentConceptIdRef: currentConceptIdRef.current,
@@ -107,14 +105,13 @@ export function AttributesStep({
           console.warn('[AttributesStep] No conceptIdForJob in onComplete')
         }
       },
-      onError: (error) => {
+      onError: (error: string) => {
         console.error('[AttributesStep] Job error:', error)
         toast.error(`Failed to generate attributes: ${error}`)
         setProcessingState('idle')
         setJobId(null)
       },
-    }
-  )
+    })
 
   // Fetch schema
   useEffect(() => {
@@ -130,31 +127,6 @@ export function AttributesStep({
 
     fetchSchema()
   }, [databaseId, client])
-
-  // Update display progress only when it increases (prevent flickering)
-  useEffect(() => {
-    if (progress && progress.total > 0 && processingState === 'generating') {
-      const actualProgress = Math.round((progress.current / progress.total) * 100)
-      console.log('[AttributesStep] Progress update:', {
-        current: progress.current,
-        total: progress.total,
-        actualProgress,
-        currentDisplayProgress: displayProgress,
-        jobId,
-        processingState
-      })
-      setDisplayProgress(prev => Math.max(prev, actualProgress))
-    }
-  }, [progress, processingState])
-
-  // Reset display progress when starting new generation
-  useEffect(() => {
-    console.log('[AttributesStep] Processing state changed to:', processingState)
-    if (processingState === 'idle') {
-      console.log('[AttributesStep] Resetting display progress to 0')
-      setDisplayProgress(0)
-    }
-  }, [processingState])
 
   // Get all concepts from all clusters
   const allConcepts = Object.values(initialConcepts)
@@ -561,7 +533,7 @@ export function AttributesStep({
                   Generating attributes...
                 </h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                  {progress?.message || 'Analyzing concept structure'}
+                  {progressMessage || 'Analyzing concept structure'}
                 </p>
                 
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden shadow-inner">
