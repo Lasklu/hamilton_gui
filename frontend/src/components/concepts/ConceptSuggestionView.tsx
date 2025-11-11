@@ -230,11 +230,15 @@ export function ConceptSuggestionView({
               onClose={() => {
                 setAddIdDialogOpen(null);
                 onDialogClose?.();
+                // Clear table highlighting to restore hover-based highlighting
+                onTableHighlight?.([]);
               }}
               onSave={(attribute, join) => {
                 handleAddIdAttribute(concept.id, attribute, join);
                 setAddIdDialogOpen(null);
                 onDialogClose?.();
+                // Clear table highlighting to restore hover-based highlighting
+                onTableHighlight?.([]);
               }}
               concept={concept}
               schema={schema}
@@ -256,11 +260,15 @@ export function ConceptSuggestionView({
               onClose={() => {
                 setAddConditionDialogOpen(null);
                 onDialogClose?.();
+                // Clear table highlighting to restore hover-based highlighting
+                onTableHighlight?.([]);
               }}
               onSave={(condition, join) => {
                 handleAddCondition(concept.id, condition, join);
                 setAddConditionDialogOpen(null);
                 onDialogClose?.();
+                // Clear table highlighting to restore hover-based highlighting
+                onTableHighlight?.([]);
               }}
               concept={concept}
               schema={schema}
@@ -276,11 +284,15 @@ export function ConceptSuggestionView({
               onClose={() => {
                 setAddJoinDialogOpen(null);
                 onDialogClose?.();
+                // Clear table highlighting to restore hover-based highlighting
+                onTableHighlight?.([]);
               }}
               onSave={(join) => {
                 handleAddJoin(concept.id, join);
                 setAddJoinDialogOpen(null);
                 onDialogClose?.();
+                // Clear table highlighting to restore hover-based highlighting
+                onTableHighlight?.([]);
               }}
               concept={concept}
               schema={schema}
