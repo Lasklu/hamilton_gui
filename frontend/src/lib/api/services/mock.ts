@@ -236,7 +236,11 @@ export const mockApi = {
     /**
      * Generate attributes for a concept (mock)
      */
-    async generateAttributes(databaseId: string, conceptId: string): Promise<JobCreateResponse> {
+    async generateAttributes(
+      databaseId: string,
+      conceptId: string,
+      request: { concept: any; tableNames: string[] }
+    ): Promise<JobCreateResponse> {
       const response = await axiosInstance.post<JobCreateResponse>(
         `/mock/databases/${databaseId}/concepts/${conceptId}/attributes`
       )

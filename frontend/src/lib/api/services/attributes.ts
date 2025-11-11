@@ -2,10 +2,15 @@
  * Attributes API service
  */
 import { axiosInstance } from '../client'
-import type { Attribute, JobCreateResponse } from '@/lib/types'
+import type { Attribute, JobCreateResponse, Concept } from '@/lib/types'
 
 export interface AttributeSuggestion {
   attributes: Attribute[]
+}
+
+export interface GenerateAttributesRequest {
+  concept: Concept
+  tableNames: string[]
 }
 
 export const attributesApi = {
@@ -14,10 +19,12 @@ export const attributesApi = {
    */
   async generateAttributes(
     databaseId: string,
-    conceptId: string
+    conceptId: string,
+    request: GenerateAttributesRequest
   ): Promise<JobCreateResponse> {
     const response = await axiosInstance.post<JobCreateResponse>(
-      `/databases/${databaseId}/concepts/${conceptId}/attributes`
+      `/databases/${databaseId}/concepts/${conceptId}/attributes`,
+      request
     )
     return response.data
   },

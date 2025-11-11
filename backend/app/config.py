@@ -38,10 +38,16 @@ class Settings(BaseSettings):
     
     # Model Configuration - LoRA Adapter Paths
     CONCEPT_ADAPTER_PATH: str = "/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best"
+    ATTRIBUTE_ADAPTER_PATH: str = "/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_attributes_20251029135113/best"
     NAMING_ADAPTER_PATH: str = "/home/lukas/hamilton/seq2seq-polynomial/models/qwen_lora_concepts_20251019163410/best"  # Update if you have a separate naming adapter
 
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000"]
+    cors_origins: List[str] = [
+        "http://localhost:3000", 
+        "http://localhost:3001",
+        "http://172.20.11.15:3000",
+        "http://172.20.11.15:3001"
+    ]
     cors_credentials: bool = True
     cors_methods: List[str] = ["*"]
     cors_headers: List[str] = ["*"]

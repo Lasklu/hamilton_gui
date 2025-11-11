@@ -47,6 +47,9 @@ export function AttributesStep({
 
   const client = useMockApi ? mockClient : apiClient
   const hasInitialized = useRef(false)
+  const currentConceptIdRef = useRef<string | null>(null)
+
+  console.log('[AttributesStep] initialConcepts:', initialConcepts)
 
   // Poll job status for attribute generation
   const { progress, result, error: jobError } = useJobPolling(
@@ -54,17 +57,58 @@ export function AttributesStep({
     {
       jobId,
       enabled: !!jobId && processingState === 'generating',
-      onComplete: (attributeResult: AttributeSuggestion) => {
-        if (currentConcept) {
+      onComplete: (attributeResult: any) => {
+        console.log('[AttributesStep] onComplete called:', {
+          jobId,
+          currentConceptIdRef: currentConceptIdRef.current,
+          currentConceptId: currentConcept?.id,
+          attributeResult
+        })
+        
+        // Use the concept ID from when the job was created, not the current concept
+        const conceptIdForJob = currentConceptIdRef.current
+        if (conceptIdForJob) {
+          console.log('[AttributesStep] Processing attributes for concept:', conceptIdForJob)
+          
+          // The result format is { databaseId, conceptId, conceptName, attributes: [...], attributeCount }
+          // Transform backend attributes to frontend Attribute format
+          const backendAttributes = attributeResult.attributes || []
+          const transformedAttributes: Attribute[] = backendAttributes.map((attr: any, index: number) => {
+            // Find the column in the schema to get dataType
+            const tableData = schema?.tables.find(t => t.name === attr.table)
+            const columnData = tableData?.columns.find(col => col.name === attr.column)
+            
+            return {
+              id: `attr-${conceptIdForJob}-${index}`,
+              name: attr.name || attr.column.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+              column: attr.column,
+              table: attr.table,
+              dataType: columnData?.dataType || 'VARCHAR',
+              isRequired: false
+            }
+          })
+          
+          console.log('[AttributesStep] Transformed attributes:', {
+            conceptId: conceptIdForJob,
+            attributeCount: transformedAttributes.length,
+            attributes: transformedAttributes
+          })
+          
           setAttributes(prev => ({
             ...prev,
-            [currentConcept.id]: attributeResult.attributes
+            [conceptIdForJob]: transformedAttributes
           }))
           setProcessingState('complete')
           setJobId(null)
+          currentConceptIdRef.current = null
+          
+          console.log('[AttributesStep] State updated, job completed')
+        } else {
+          console.warn('[AttributesStep] No conceptIdForJob in onComplete')
         }
       },
       onError: (error) => {
+        console.error('[AttributesStep] Job error:', error)
         toast.error(`Failed to generate attributes: ${error}`)
         setProcessingState('idle')
         setJobId(null)
@@ -91,13 +135,23 @@ export function AttributesStep({
   useEffect(() => {
     if (progress && progress.total > 0 && processingState === 'generating') {
       const actualProgress = Math.round((progress.current / progress.total) * 100)
+      console.log('[AttributesStep] Progress update:', {
+        current: progress.current,
+        total: progress.total,
+        actualProgress,
+        currentDisplayProgress: displayProgress,
+        jobId,
+        processingState
+      })
       setDisplayProgress(prev => Math.max(prev, actualProgress))
     }
   }, [progress, processingState])
 
   // Reset display progress when starting new generation
   useEffect(() => {
+    console.log('[AttributesStep] Processing state changed to:', processingState)
     if (processingState === 'idle') {
+      console.log('[AttributesStep] Resetting display progress to 0')
       setDisplayProgress(0)
     }
   }, [processingState])
@@ -107,7 +161,20 @@ export function AttributesStep({
     .flatMap(c => c.concepts)
     .filter(c => c.id) // Only concepts with IDs
 
+  console.log('[AttributesStep] All concepts:', allConcepts.map(c => ({ id: c.id, name: c.name })))
+
   const currentConcept = allConcepts[currentConceptIndex]
+  
+  console.log('[AttributesStep] Current state:', {
+    currentConceptIndex,
+    currentConceptId: currentConcept?.id,
+    currentConceptName: currentConcept?.name,
+    totalConcepts: allConcepts.length,
+    processingState,
+    jobId,
+    hasInitialized: hasInitialized.current,
+    currentConceptIdRef: currentConceptIdRef.current
+  })
 
   // Get clusters relevant to current concept
   const getRelevantClusters = (concept: Concept): number[] => {
@@ -157,23 +224,33 @@ export function AttributesStep({
 
   // Initialize expanded clusters for current concept
   useEffect(() => {
+    console.log('[AttributesStep] currentConceptIndex changed to:', currentConceptIndex)
     if (currentConcept) {
       const relevantClusters = getRelevantClusters(currentConcept)
       // Expand first cluster by default
       if (relevantClusters.length > 0) {
         setExpandedClusters(new Set([relevantClusters[0]]))
       }
-      hasInitialized.current = false
-      setProcessingState('idle')
+      // Don't reset hasInitialized or processingState here - they are managed by navigation handlers
     }
   }, [currentConceptIndex])
 
   // Auto-generate attributes for current concept if not already generated
   useEffect(() => {
+    console.log('[AttributesStep] Generation effect triggered:', {
+      currentConceptId: currentConcept?.id,
+      currentConceptName: currentConcept?.name,
+      hasInitialized: hasInitialized.current,
+      processingState,
+      hasExistingAttributes: currentConcept ? !!attributes[currentConcept.id] : false,
+      willGenerate: !!currentConcept && !hasInitialized.current && processingState === 'idle' && !attributes[currentConcept?.id]
+    })
+    
     if (!currentConcept || hasInitialized.current || processingState !== 'idle') return
     
     const existingAttributes = attributes[currentConcept.id]
     if (existingAttributes) {
+      console.log('[AttributesStep] Attributes already exist for concept:', currentConcept.id)
       setProcessingState('complete')
       return
     }
@@ -181,29 +258,91 @@ export function AttributesStep({
     // Start generating attributes
     const generateAttributes = async () => {
       try {
+        console.log('[AttributesStep] Starting generation for concept:', {
+          id: currentConcept.id,
+          name: currentConcept.name,
+          clusterId: currentConcept.clusterId
+        })
+        
+        // Mark as initialized immediately to prevent double-calls
+        hasInitialized.current = true
         setProcessingState('generating')
+        
+        // Save the concept ID for this job so we can correctly store results even if user navigates away
+        currentConceptIdRef.current = currentConcept.id
+        
+        console.log('[AttributesStep] Set currentConceptIdRef to:', currentConceptIdRef.current)
+        
+        // Get table names from the concept's cluster
+        const conceptClusterId = currentConcept.clusterId
+        const cluster = clusteringResult.clusters.find(c => c.clusterId === conceptClusterId)
+        const tableNames = cluster?.tables || []
+        
+        console.log('[AttributesStep] Calling API:', {
+          databaseId,
+          conceptId: currentConcept.id,
+          tableNames
+        })
+        
         const response = await client.attributes.generateAttributes(
           databaseId,
-          currentConcept.id
+          currentConcept.id,
+          {
+            concept: currentConcept,
+            tableNames: tableNames
+          }
         )
+        console.log('[AttributesStep] API response - jobId:', response.jobId)
         setJobId(response.jobId)
-        hasInitialized.current = true
       } catch (error) {
-        console.error('Error starting attribute generation:', error)
+        console.error('[AttributesStep] Error starting generation:', error)
         toast.error('Failed to start attribute generation')
         setProcessingState('idle')
+        setJobId(null)
+        currentConceptIdRef.current = null
+        hasInitialized.current = false // Reset on error so it can retry
       }
     }
 
     generateAttributes()
-  }, [currentConcept, attributes, databaseId, client, processingState])
+  }, [currentConcept, attributes, databaseId, clusteringResult, client])
+
+  const handlePreviousConcept = () => {
+    console.log('[AttributesStep] handlePreviousConcept called')
+    if (currentConceptIndex > 0) {
+      hasInitialized.current = false // Reset for new concept
+      setProcessingState('idle') // Reset processing state
+      setCurrentConceptIndex(currentConceptIndex - 1)
+    }
+  }
+
+  const handleNextConcept = () => {
+    console.log('[AttributesStep] handleNextConcept called')
+    if (currentConceptIndex < allConcepts.length - 1) {
+      hasInitialized.current = false // Reset for new concept
+      setProcessingState('idle') // Reset processing state
+      setCurrentConceptIndex(currentConceptIndex + 1)
+    }
+  }
+
+  const handleSelectConcept = (index: number) => {
+    console.log('[AttributesStep] handleSelectConcept called:', index)
+    if (index !== currentConceptIndex) {
+      hasInitialized.current = false // Reset for new concept
+      setProcessingState('idle') // Reset processing state
+      setCurrentConceptIndex(index)
+    }
+  }
 
   const handleConceptConfirm = (conceptId: string) => {
+    console.log('[AttributesStep] handleConceptConfirm called:', conceptId)
     setConfirmedConcepts(prev => new Set([...prev, conceptId]))
     toast.success('Attributes confirmed for this concept')
     
     // Move to next concept or complete
     if (currentConceptIndex < allConcepts.length - 1) {
+      hasInitialized.current = false // Reset for new concept
+      setProcessingState('idle') // Reset processing state
       setCurrentConceptIndex(currentConceptIndex + 1)
     } else {
       // All concepts confirmed
@@ -301,7 +440,7 @@ export function AttributesStep({
             {/* Concept Navigation Bar with Arrows */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setCurrentConceptIndex(Math.max(0, currentConceptIndex - 1))}
+                onClick={handlePreviousConcept}
                 disabled={currentConceptIndex === 0}
                 className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -319,10 +458,7 @@ export function AttributesStep({
                   return (
                     <button
                       key={concept.id}
-                      onClick={() => {
-                        setCurrentConceptIndex(index)
-                        hasInitialized.current = false
-                      }}
+                      onClick={() => handleSelectConcept(index)}
                       className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
                         isCurrent
                           ? 'bg-primary-500 text-white shadow-md scale-105'
@@ -338,7 +474,7 @@ export function AttributesStep({
               </div>
 
               <button
-                onClick={() => setCurrentConceptIndex(Math.min(allConcepts.length - 1, currentConceptIndex + 1))}
+                onClick={handleNextConcept}
                 disabled={currentConceptIndex === allConcepts.length - 1}
                 className="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >

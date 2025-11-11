@@ -148,7 +148,13 @@ export function ConceptSuggestionView({
     const concept = findConceptById(conceptId);
     if (!concept || !onConceptUpdate) return;
 
-    const updatedConditions = [...(concept.conditions || []), condition];
+    // Ensure conditions are strings (for backward compatibility)
+    const existingConditions = concept.conditions || [];
+    const stringConditions = existingConditions.map(c => 
+      typeof c === 'string' ? c : `${c.table}.${c.column} ${c.operator} ${c.value}`
+    );
+    
+    const updatedConditions = [...stringConditions, condition];
     const updates: Partial<Concept> = {
       conditions: updatedConditions
     };
@@ -181,10 +187,13 @@ export function ConceptSuggestionView({
     const concept = findConceptById(conceptId);
     if (!concept || !onConceptUpdate) return;
 
-    const updatedConditions = [...(concept.conditions || [])];
-    updatedConditions.splice(conditionIndex, 1);
+    const existingConditions = concept.conditions || [];
+    const stringConditions = existingConditions.map(c => 
+      typeof c === 'string' ? c : `${c.table}.${c.column} ${c.operator} ${c.value}`
+    );
+    stringConditions.splice(conditionIndex, 1);
     onConceptUpdate(conceptId, {
-      conditions: updatedConditions.length > 0 ? updatedConditions : undefined
+      conditions: stringConditions.length > 0 ? stringConditions : undefined
     });
   };
 

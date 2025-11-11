@@ -11,6 +11,7 @@ class ConceptAttribute(BaseModel):
     """Reference to a table column"""
     table: str = Field(..., description="Table name")
     column: str = Field(..., description="Column name")
+    name: Optional[str] = Field(None, description="Human-readable name for the attribute")
 
     class Config:
         populate_by_name = True
