@@ -4,12 +4,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
 import { Loading } from '@/components/ui/Loading';
-import { JobProgressIndicator } from '@/components/ui/JobProgressIndicator';
+import { JobProgressBar } from '@/components/ui/JobProgressBar';
 import { TableClusterView } from '@/components/concepts/TableClusterView';
 import { ConceptSuggestionView } from '@/components/concepts/ConceptSuggestionView';
 import { ConceptOverview } from '@/components/concepts/ConceptOverview';
 import { apiClient, mockClient } from '@/lib/api/services';
-import { useJobPolling } from '@/hooks/useJobPolling';
+import { useJobPollingWithProgress } from '@/hooks/useJobPollingWithProgress';
 import type { ClusteringResult, DatabaseSchema, Concept, ConceptSuggestion } from '@/lib/types';
 
 interface ConceptsStepProps {
@@ -45,7 +45,6 @@ export function ConceptsStep({
   const [selectedTableForDialog, setSelectedTableForDialog] = useState<string | null>(null);
   const [selectedColumnForDialog, setSelectedColumnForDialog] = useState<string | null>(null);
   const [isDialogActive, setIsDialogActive] = useState(false);
-  const [displayProgress, setDisplayProgress] = useState(0);
   const hasInitialized = useRef(false);
   const currentJobIdRef = useRef<string | null>(null);
   const [baseModelLoading, setBaseModelLoading] = useState(false);
@@ -54,37 +53,32 @@ export function ConceptsStep({
   const client = useMockApi ? mockClient : apiClient;
   const currentCluster = clusteringResult.clusters[currentClusterIndex];
 
-  // Poll job status for concept generation
-  const { progress, result, error: jobError } = useJobPolling(
-    (id) => client.jobs.getStatus(id),
-    {
-      jobId,
-      enabled: !!jobId && processingState === 'generating',
-      onComplete: (conceptResult: ConceptSuggestion) => {
-        if (currentCluster) {
-          // Set progress to 100% before showing results
-          setDisplayProgress(100);
-          
-          const newClusterConcepts = new Map(clusterConcepts);
-          newClusterConcepts.set(currentCluster.clusterId, {
-            clusterId: currentCluster.clusterId,
-            concepts: conceptResult.concepts,
-            confirmed: false,
-          });
-          setClusterConcepts(newClusterConcepts);
-          setProcessingState('complete');
-          setJobId(null);
-          currentJobIdRef.current = null; // Clear job ref
-        }
-      },
-      onError: (error) => {
-        toast.error(`Failed to generate concepts: ${error}`);
-        setProcessingState('idle');
+  // Poll job status for concept generation with progress tracking
+  const { displayProgress, processingState: pollingState, progressMessage } = useJobPollingWithProgress<ConceptSuggestion>({
+    client,
+    jobId,
+    enabled: !!jobId && processingState === 'generating',
+    onComplete: (conceptResult: ConceptSuggestion) => {
+      if (currentCluster) {
+        const newClusterConcepts = new Map(clusterConcepts);
+        newClusterConcepts.set(currentCluster.clusterId, {
+          clusterId: currentCluster.clusterId,
+          concepts: conceptResult.concepts,
+          confirmed: false,
+        });
+        setClusterConcepts(newClusterConcepts);
+        setProcessingState('complete');
         setJobId(null);
         currentJobIdRef.current = null; // Clear job ref
-      },
-    }
-  );
+      }
+    },
+    onError: (error: string) => {
+      toast.error(`Failed to generate concepts: ${error}`);
+      setProcessingState('idle');
+      setJobId(null);
+      currentJobIdRef.current = null; // Clear job ref
+    },
+  });
 
   // Fetch schema
   useEffect(() => {
@@ -100,30 +94,6 @@ export function ConceptsStep({
 
     fetchSchema();
   }, [databaseId, client]);
-
-  // Update display progress only when it increases (prevent flickering)
-  useEffect(() => {
-    // Only update progress if it's for the current active job
-    if (progress && progress.total > 0 && processingState === 'generating' && jobId && jobId === currentJobIdRef.current) {
-      const actualProgress = Math.round((progress.current / progress.total) * 100);
-      // Set to the actual progress reported by the job (allow decreases when new job starts)
-      setDisplayProgress(actualProgress);
-    }
-  }, [progress, processingState, jobId]);
-
-  // Reset display progress whenever a new job is started
-  useEffect(() => {
-    if (jobId) {
-      setDisplayProgress(0);
-    }
-  }, [jobId]);
-
-  // Reset display progress when starting new generation
-  useEffect(() => {
-    if (processingState === 'idle') {
-      setDisplayProgress(0);
-    }
-  }, [processingState]);
 
   // Sync concepts to parent component (using useRef to avoid infinite loops)
   const onConceptsUpdateRef = useRef(onConceptsUpdate);
@@ -210,8 +180,6 @@ export function ConceptsStep({
 
       try {
         console.log('[ConceptsStep] Starting concept generation for cluster:', currentCluster.clusterId);
-        // Ensure the visible progress bar is reset before the job starts
-        setDisplayProgress(0);
         setProcessingState('generating');
         const response = await client.concepts.generateConcepts(
           databaseId,
@@ -244,7 +212,6 @@ export function ConceptsStep({
     if (currentClusterIndex > 0) {
       setCurrentClusterIndex(currentClusterIndex - 1);
       setProcessingState('idle');
-      setDisplayProgress(0);
       setJobId(null); // Clear old job ID
       currentJobIdRef.current = null; // Clear job ref
       hasInitialized.current = false;
@@ -255,7 +222,6 @@ export function ConceptsStep({
     if (currentClusterIndex < clusteringResult.clusters.length - 1) {
       setCurrentClusterIndex(currentClusterIndex + 1);
       setProcessingState('idle');
-      setDisplayProgress(0);
       setJobId(null); // Clear old job ID
       currentJobIdRef.current = null; // Clear job ref
       hasInitialized.current = false;
@@ -646,7 +612,7 @@ export function ConceptsStep({
                     Generating concepts...
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    {progress?.message || 'Analyzing cluster structure'}
+                    {progressMessage || 'Analyzing cluster structure'}
                   </p>
                   
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden shadow-inner">
